@@ -5,7 +5,7 @@
  *      Author: wataoxp
  */
 #include "spi.h"
-#include "delay.h"
+#include "gpio.h"
 
 SPI::SPI(SPI_TypeDef *SPIPORT)
 {
@@ -42,59 +42,74 @@ void SPI::StructInit(SPI_InitTypedef *config,uint32_t SPI_Mode,uint32_t NSS_Mode
 {
 	config->TransferDirection = LL_SPI_FULL_DUPLEX;
 	config->DataWidth = LL_SPI_DATAWIDTH_8BIT;
-	config->ClockPolarity = LL_SPI_POLARITY_HIGH;
-	config->ClockPhase = LL_SPI_PHASE_2EDGE;
+	config->ClockPolarity = LL_SPI_POLARITY_LOW;
+	config->ClockPhase = LL_SPI_PHASE_1EDGE;
 	config->BitOrder = LL_SPI_MSB_FIRST;
 	config->NSS = NSS_Mode;
 	config->Mode = SPI_Mode;
 
 	if(SPI_Mode == MSTR_MASTER)
 	{
-		config->SSI = SPI_CR1_SSI;
 		config->SSOE = SSOE_OUTPUT_ENABLE;
 		config->BaudRate = LL_SPI_BAUDRATEPRESCALER_DIV32;		//SPIクロック周波数
 	}
 	if(NSS_Mode == NSS_SOFT_CONTROL)
 	{
+		config->SSI = SPI_CR1_SSI;
 		config->SSOE = SSOE_OUTPUT_DISABLE;
 	}
 }
 SPIStatus SPI::Transfer(uint8_t *data,uint16_t length)
 {
-	uint8_t *spidr = (uint8_t *)&SPIx->DR;
+	LL_SPI_Enable(SPIx);
 
-	SPIx->CR1 |= SPI_CR1_SPE;
-
-	while((SPIx->SR & SPI_SR_BSY) != 0);
+	while(LL_SPI_IsActiveFlag_BSY(SPIx));
 
 	for(uint16_t i = 0;i < length;i++)
 	{
-		*spidr = data[i];
-		while((SPIx->SR & SPI_SR_TXE) == 0);
+		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+		LL_SPI_TransmitData8(SPIx, data[i]);
 	}
-	while((SPIx->SR & SPI_SR_BSY) != 0);
+	while(LL_SPI_IsActiveFlag_BSY(SPIx));
 
-	SPIx->CR1 &= ~SPI_CR1_SPE;
+	LL_SPI_Disable(SPIx);
 
-	return ((SPIx->SR & SPI_SR_FTLVL) == 0)? spi_Succses:spi_Leak;
+	return (LL_SPI_GetTxFIFOLevel(SPIx) == 0)? spi_Succses:spi_Leak;
 }
 void SPI::TransmitReceive(uint8_t *TXbuf,uint8_t *RXbuf,uint16_t length)
 {
-	uint8_t *spidr = (uint8_t *)&SPIx->DR;
+	LL_SPI_Enable(SPIx);
 
-	SPIx->CR1 |= SPI_CR1_SPE;
-
-	while((SPIx->SR & SPI_SR_BSY) != 0);
+	while(LL_SPI_IsActiveFlag_BSY(SPIx));
 
 	for(uint16_t i = 0;i < length;i++)
 	{
-		*spidr = TXbuf[i];
-		while((SPIx->SR & SPI_SR_TXE) == 0);
-		while((SPIx->SR & SPI_SR_RXNE) == 0);
-		RXbuf[i] = *spidr;
+		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+		LL_SPI_TransmitData8(SPIx, TXbuf[i]);
+		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
+		RXbuf[i] = LL_SPI_ReceiveData8(SPIx);
 	}
-	SPIx->CR1 &= ~SPI_CR1_SPE;
+	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+
+	LL_SPI_Disable(SPIx);
 }
+//void SPI_MasterTransmitReceive8(SPI_TypeDef *SPIx,uint8_t *TXbuf,uint8_t *Rxbuf,uint32_t size)
+//{
+//	LL_SPI_Enable(SPIx);
+//
+//	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+//
+//	for(uint32_t i = 0;i < size; i++)
+//	{
+//		LL_SPI_TransmitData8(SPIx, TXbuf[i]);
+//		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+//		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
+//		Rxbuf[i] = LL_SPI_ReceiveData8(SPIx);
+//	}
+//	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+//
+//	LL_SPI_Disable(SPIx);
+//}
 #if 0
 uint8_t SPI_Transmit8(SPI_TypeDef *SPIx,uint8_t *buf,uint16_t length)
 {

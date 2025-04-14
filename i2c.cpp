@@ -60,25 +60,26 @@ void I2C::endTransmission(void)
 }
 void I2C::endTransmission(WireEndMode mode)
 {
-	while((I2Cx->ISR & I2C_ISR_BUSY) != 0);
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
 	I2Cx->CR2 = 0;
 	I2Cx->CR2 = address | 0 << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | index << I2C_CR2_NBYTES_Pos | mode << I2C_CR2_AUTOEND_Pos;
 
 	for(uint8_t i = 0;i < index;i++)
 	{
-		I2Cx->TXDR = Buffer[i];
-		while((I2Cx->ISR & I2C_ISR_TXE) == 0);
+		//I2Cx->TXDR = Buffer[i];
+		LL_I2C_TransmitData8(I2Cx, Buffer[i]);
+		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
 	}
 
 	if(mode == AutoEnd)
 	{
-		while((I2Cx->ISR & I2C_ISR_STOPF) == 0);
-		I2Cx->ICR |= I2C_ICR_STOPCF;
+		while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+		LL_I2C_ClearFlag_STOP(I2Cx);
 	}
 	else
 	{
-		while((I2Cx->ISR & I2C_ISR_TC) == 0);
+		while(LL_I2C_IsActiveFlag_TC(I2Cx) == 0);
 	}
 	index = 0;
 }
@@ -91,12 +92,13 @@ WireStatus I2C::requestFrom(uint8_t addr,uint8_t length)
 
 	for(i = 0;i < length;i++)
 	{
-		while((I2Cx->ISR & I2C_ISR_RXNE) == 0);
-		Buffer[i] = I2Cx->RXDR;
+		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
+		//Buffer[i] = I2Cx->RXDR;
+		Buffer[i] = LL_I2C_ReceiveData8(I2Cx);
 	}
 
-	while((I2Cx->ISR & I2C_ISR_STOPF) == 0);
-	I2Cx->ICR |= I2C_ICR_STOPCF;
+	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	LL_I2C_ClearFlag_STOP(I2Cx);
 
 	index = 0;
 

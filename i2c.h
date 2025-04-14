@@ -44,6 +44,18 @@ typedef enum{
 	wire_mismatch,
 }WireStatus;
 
+typedef struct{
+	uint8_t Byte0;
+	uint8_t Byte1;
+	uint8_t Byte2;
+	uint8_t Byte3;
+}RegBytes;
+
+typedef union{
+	RegBytes Reg;
+	uint32_t Byte;
+}FourByte;
+
 class I2C{
 private:
 	I2C_TypeDef *I2Cx;
@@ -54,6 +66,7 @@ private:
 	void endTransmission(WireEndMode mode);
 	WireStatus requestFrom(uint8_t addr,uint8_t length);
 public:
+	//FourByte Regs;
 	I2C(I2C_TypeDef *I2CPORT);
 	static void ConfigMaster(I2C_TypeDef *I2Cx);
 	static void ConfigSlave(I2C_TypeDef *I2Cx,uint8_t OwnAddr);
