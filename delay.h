@@ -21,6 +21,7 @@
 static inline void Init1usTick(void)
 {
 	SysTick->LOAD  = (uint32_t)(MICRO_LOAD - 1UL);
+	SysTick->VAL = 114514;
 }
 static inline void DeInit1usTick(void)
 {

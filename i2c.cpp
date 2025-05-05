@@ -6,16 +6,20 @@
  */
 
 #include "i2c.h"
+#include "gpio.h"
 #include <string.h>
 
 #define I2C_BUFFER_SIZE I2C_BUFFER_HALF
 
-I2C::I2C(I2C_TypeDef *I2CPORT)
+constexpr uint8_t DirectionWrite = 0;
+constexpr uint8_t DirectionRead = 1;
+
+I2C::I2C(I2C_TypeDef *I2CPORT) :I2Cx(I2CPORT)
 {
-	I2Cx = I2CPORT;
+	;
 }
 
-void I2C::ConfigMaster(I2C_TypeDef *I2Cx)
+void I2C::ConfigMaster(void)
 {
 	uint32_t Timing = I2C_CLOCK_400;
 
@@ -27,122 +31,111 @@ void I2C::ConfigMaster(I2C_TypeDef *I2Cx)
 	LL_I2C_EnableAutoEndMode(I2Cx);
 	LL_I2C_EnableClockStretching(I2Cx);
 }
-void I2C::beginTransmission(uint8_t addr)
+uint32_t I2C::WirePinConfig(WirePinStruct *obj)
 {
-	address = addr;
-	index = 0;
-}
-WireStatus I2C::Write(uint8_t val)
-{
-	if(index >= I2C_BUFFER_SIZE)
-	{
-		return wire_Over;
-	}
-	Buffer[index++] = val;
+	uint32_t ret = 0;
+	GPIO SCL(obj->PortSCL,obj->PinSCL);
+	GPIO SDA(obj->PortSDA,obj->PinSDA);
 
-	return wire_Succses;
+	ret += SCL.Begin();
+	ret += SDA.Begin();
+
+	SCL.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_OPENDRAIN);
+	SDA.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_OPENDRAIN);
+
+	SCL.AlternateInit(LL_GPIO_AF_6);
+	SDA.AlternateInit(LL_GPIO_AF_6);
+
+	return ret;
 }
-WireStatus I2C::Write(uint8_t *data,uint8_t length)
-{
-	if((index + length) >= I2C_BUFFER_SIZE)
-	{
-		return wire_Over;
-	}
-	for(uint8_t i = 0;i < length;i++)
-	{
-		Buffer[index++] = data[i];
-	}
-	return wire_Succses;
-}
-void I2C::endTransmission(void)
-{
-	this->endTransmission(AutoEnd);
-}
-void I2C::endTransmission(WireEndMode mode)
+/* I2C Function */
+WireStatus I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
 {
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
 	I2Cx->CR2 = 0;
-	I2Cx->CR2 = address | 0 << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | index << I2C_CR2_NBYTES_Pos | mode << I2C_CR2_AUTOEND_Pos;
+	I2Cx->CR2 = addr | DirectionWrite << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | length << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
 
-	for(uint8_t i = 0;i < index;i++)
+	for(uint8_t i = 0;i < length;i++)
 	{
-		//I2Cx->TXDR = Buffer[i];
-		LL_I2C_TransmitData8(I2Cx, Buffer[i]);
+		LL_I2C_TransmitData8(I2Cx, TxBuf[i]);
 		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-
-	if(mode == AutoEnd)
-	{
-		while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-		LL_I2C_ClearFlag_STOP(I2Cx);
-	}
-	else
-	{
-		while(LL_I2C_IsActiveFlag_TC(I2Cx) == 0);
-	}
-	index = 0;
-}
-WireStatus I2C::requestFrom(uint8_t addr,uint8_t length)
-{
-	uint8_t i;
-
-	I2Cx->CR2 = 0;
-	I2Cx->CR2 = address | 1 << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | length << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
-
-	for(i = 0;i < length;i++)
-	{
-		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
-		//Buffer[i] = I2Cx->RXDR;
-		Buffer[i] = LL_I2C_ReceiveData8(I2Cx);
 	}
 
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
-	index = 0;
-
-	return (i == length)? wire_match:wire_mismatch;
+	return WireStatus::succses;
 }
+WireStatus I2C::Transmit(uint8_t addr,uint8_t Reg,uint8_t *TxBuf,uint8_t length)
+{
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
-WireStatus I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t Reg)
-{
-	this->beginTransmission(addr);
-	this->Write(Reg);
-	this->endTransmission(mode);
+	I2Cx->CR2 = 0;
+	I2Cx->CR2 = addr | DirectionWrite << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | (length+1) << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
 
-	return this->requestFrom(addr, length);
-}
-WireStatus I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t HighByte,uint8_t LowByte)
-{
-	this->beginTransmission(addr);
-	this->Write(HighByte);
-	this->Write(LowByte);
-	this->endTransmission(mode);
+	LL_I2C_TransmitData8(I2Cx, Reg);
+	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
 
-	return this->requestFrom(addr, length);
-}
-uint8_t I2C::Read(void)
-{
-	if(index < I2C_BUFFER_SIZE)
-	{
-		return Buffer[index++];
-	}
-	return 0;
-}
-WireStatus I2C::Read(uint8_t *buf,uint8_t length)
-{
-	if(length > I2C_BUFFER_SIZE)
-	{
-		return wire_Over;
-	}
 	for(uint8_t i = 0;i < length;i++)
 	{
-		buf[i] = Buffer[i];
+		LL_I2C_TransmitData8(I2Cx, TxBuf[i]);
+		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
 	}
-	return wire_Succses;
+
+	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	return WireStatus::succses;
 }
-void I2C::ConfigSlave(I2C_TypeDef *I2Cx,uint8_t OwnAddr)
+void I2C::Write(uint8_t addr,uint8_t Reg)
+{
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+
+	I2Cx->CR2 = 0;
+	I2Cx->CR2 = addr | DirectionWrite << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | 1 << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
+
+	LL_I2C_TransmitData8(I2Cx, Reg);
+	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+
+	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	LL_I2C_ClearFlag_STOP(I2Cx);
+}
+void I2C::Write(uint8_t addr,uint8_t Reg,uint8_t Data)
+{
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+
+	I2Cx->CR2 = 0;
+	I2Cx->CR2 = addr | DirectionWrite << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | 2 << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
+
+	LL_I2C_TransmitData8(I2Cx, Reg);
+	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+
+	LL_I2C_TransmitData8(I2Cx, Data);
+	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+
+	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	LL_I2C_ClearFlag_STOP(I2Cx);
+}
+WireStatus I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
+{
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+
+	I2Cx->CR2 = 0;
+	I2Cx->CR2 = addr | DirectionRead << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | length << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
+
+	for(uint8_t i = 0;i < length;i++)
+	{
+		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
+		RxBuf[i] = LL_I2C_ReceiveData8(I2Cx);
+	}
+
+	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	return WireStatus::succses;
+}
+void I2C::ConfigSlave(uint8_t OwnAddr)
 {
 	uint32_t Timing = I2C_CLOCK_400;
 
@@ -165,180 +158,118 @@ void I2C::ConfigSlave(I2C_TypeDef *I2Cx,uint8_t OwnAddr)
 
 	LL_I2C_Enable(I2Cx);
 }
-#if 0
-void I2C::PushTransmit(uint8_t address,uint8_t data)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
-	I2C::CR2SetUP(I2Cx, address, LL_I2C_REQUEST_WRITE, 1, LL_I2C_MODE_AUTOEND);
-
-	LL_I2C_TransmitData8(I2Cx, data);
-	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-void I2C::MasterTransmit(uint8_t address,uint8_t *data,uint8_t length)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	I2C::CR2SetUP(I2Cx, address, LL_I2C_REQUEST_WRITE, length, LL_I2C_MODE_AUTOEND);
-
-	while(length)
-	{
-		LL_I2C_TransmitData8(I2Cx, *data++);
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		length--;
-	}
-
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-void I2C::MasterReceive(uint8_t address,uint8_t *buffer,uint8_t length)
-{
-	I2C::CR2SetUP(I2Cx, address, LL_I2C_REQUEST_READ, length, LL_I2C_MODE_AUTOEND);
-
-	while(length)
-	{
-		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
-		*buffer++ = LL_I2C_ReceiveData8(I2Cx);
-		length--;
-	}
-
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-void I2C::PushMemWrite(uint8_t address,uint8_t data,uint16_t Reg,uint8_t RegSize)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	I2C::CR2SetUP(I2Cx, address, LL_I2C_REQUEST_WRITE, RegSize+1, LL_I2C_MODE_AUTOEND);
-
-	if(RegSize == I2C_MEMADD_SIZE_8BIT)
-	{
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-	else
-	{
-		LL_I2C_TransmitData8(I2Cx, ((Reg >> 8) & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-	LL_I2C_TransmitData8(I2Cx, data);
-
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-void I2C::SeqMemWrite(uint8_t address,uint8_t *data,uint16_t Reg,uint8_t RegSize,uint8_t length)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	I2C::CR2SetUP(I2Cx, address, LL_I2C_REQUEST_WRITE, RegSize+length, LL_I2C_MODE_AUTOEND);
-
-	if(RegSize == I2C_MEMADD_SIZE_8BIT)
-	{
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-	else
-	{
-		LL_I2C_TransmitData8(I2Cx, ((Reg >> 8) & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-
-	while(length)
-	{
-		LL_I2C_TransmitData8(I2Cx, *data++);
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		length--;
-	}
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-void PushI2C_Mem_Write(I2C_TypeDef *I2Cx,uint8_t address,uint8_t data,uint16_t Reg,uint8_t RegSize)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	CR2SetUP(I2Cx, address, LL_I2C_REQUEST_WRITE, RegSize+1, LL_I2C_MODE_AUTOEND);
-
-	if(RegSize == I2C_MEMADD_SIZE_8BIT)
-	{
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-	else
-	{
-		LL_I2C_TransmitData8(I2Cx, ((Reg >> 8) & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-	LL_I2C_TransmitData8(I2Cx, data);
-
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-void SeqI2C_Mem_Write(I2C_TypeDef *I2Cx,uint8_t address,uint8_t *data,uint16_t Reg,uint8_t RegSize,uint8_t length)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	CR2SetUP(I2Cx, address, LL_I2C_REQUEST_WRITE, RegSize+length, LL_I2C_MODE_AUTOEND);
-
-	if(RegSize == I2C_MEMADD_SIZE_8BIT)
-	{
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-	else
-	{
-		LL_I2C_TransmitData8(I2Cx, ((Reg >> 8) & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-
-	while(length)
-	{
-		LL_I2C_TransmitData8(I2Cx, *data++);
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		length--;
-	}
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-void I2C_Mem_Read(I2C_TypeDef *I2Cx,uint8_t address,uint8_t *buffer,uint16_t Reg,uint8_t RegSize,uint8_t length)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-	CR2SetUP(I2Cx, address, LL_I2C_REQUEST_WRITE , RegSize, LL_I2C_MODE_SOFTEND);
-
-	if(RegSize == I2C_MEMADD_SIZE_8BIT)
-	{
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-	else
-	{
-		LL_I2C_TransmitData8(I2Cx, ((Reg >> 8) & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-		LL_I2C_TransmitData8(I2Cx, (Reg & 0xFF));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
-	}
-
-	while(LL_I2C_IsActiveFlag_TC(I2Cx) == 0); 	//転送が完了したかチェック
-
-	CR2SetUP(I2Cx, address, LL_I2C_REQUEST_READ, length, LL_I2C_MODE_AUTOEND);
-
-	while(length)
-	{
-		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
-		*buffer++ = LL_I2C_ReceiveData8(I2Cx);
-		length--;
-	}
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-}
-#endif
+//WireStatus I2C::Write(uint8_t val)
+//{
+//	if(index >= I2C_BUFFER_SIZE)
+//	{
+//		return WireStatus::TxOver;
+//	}
+//	Buffer[index++] = val;
+//
+//	return WireStatus::succses;
+//}
+///* Wire Functions */
+//void I2C::beginTransmission(uint8_t addr)
+//{
+//	address = addr;
+//	index = 0;
+//}
+//WireStatus I2C::Write(uint8_t *data,uint8_t length)
+//{
+//	if((index + length) >= I2C_BUFFER_SIZE)
+//	{
+//		return WireStatus::TxOver;
+//	}
+//	for(uint8_t i = 0;i < length;i++)
+//	{
+//		Buffer[index++] = data[i];
+//	}
+//	return WireStatus::succses;
+//}
+//void I2C::endTransmission(void)
+//{
+//	this->endTransmission(AutoEnd);
+//}
+//void I2C::endTransmission(WireEndMode mode)
+//{
+//	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+//
+//	I2Cx->CR2 = 0;
+//	I2Cx->CR2 = address | 0 << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | index << I2C_CR2_NBYTES_Pos | mode << I2C_CR2_AUTOEND_Pos;
+//
+//	for(uint8_t i = 0;i < index;i++)
+//	{
+//		LL_I2C_TransmitData8(I2Cx, Buffer[i]);
+//		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+//	}
+//
+//	if(mode == AutoEnd)
+//	{
+//		while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+//		LL_I2C_ClearFlag_STOP(I2Cx);
+//	}
+//	else
+//	{
+//		while(LL_I2C_IsActiveFlag_TC(I2Cx) == 0);
+//	}
+//	index = 0;
+//}
+//WireStatus I2C::requestFrom(uint8_t addr,uint8_t length)
+//{
+//	uint8_t i;
+//
+//	I2Cx->CR2 = 0;
+//	I2Cx->CR2 = address | 1 << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | length << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
+//
+//	for(i = 0;i < length;i++)
+//	{
+//		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
+//		Buffer[i] = LL_I2C_ReceiveData8(I2Cx);
+//	}
+//
+//	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+//	LL_I2C_ClearFlag_STOP(I2Cx);
+//
+//	index = 0;
+//
+//	return (i == length)? WireStatus::succses:WireStatus::RxOver;
+//}
+//
+//WireStatus I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t Reg)
+//{
+//	this->beginTransmission(addr);
+//	this->Write(Reg);
+//	this->endTransmission(mode);
+//
+//	return this->requestFrom(addr, length);
+//}
+//WireStatus I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t HighByte,uint8_t LowByte)
+//{
+//	this->beginTransmission(addr);
+//	this->Write(HighByte);
+//	this->Write(LowByte);
+//	this->endTransmission(mode);
+//
+//	return this->requestFrom(addr, length);
+//}
+//uint8_t I2C::Read(void)
+//{
+//	if(index < I2C_BUFFER_SIZE)
+//	{
+//		return Buffer[index++];
+//	}
+//	return 0;
+//}
+//WireStatus I2C::Read(uint8_t *buf,uint8_t length)
+//{
+//	if(length > I2C_BUFFER_SIZE)
+//	{
+//		return WireStatus::RxOver;
+//	}
+//	for(uint8_t i = 0;i < length;i++)
+//	{
+//		buf[i] = Buffer[i];
+//	}
+//	return WireStatus::succses;
+//}

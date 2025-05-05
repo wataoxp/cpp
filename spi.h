@@ -8,11 +8,10 @@
 #ifndef INC_SPI_H_
 #define INC_SPI_H_
 
-#include "periph.h"
 #include "stm32g0xx_ll_spi.h"
 
 #define NSS_AUTO_CONTROL 0
-#define NSS_SOFT_CONTROL SPI_CR1_SSI
+#define NSS_SOFT_CONTROL SPI_CR1_SSM
 #define SSOE_OUTPUT_ENABLE SPI_CR2_SSOE
 #define SSOE_OUTPUT_DISABLE 0
 #define MSTR_MASTER SPI_CR1_MSTR
@@ -32,6 +31,17 @@ typedef struct{
 	uint32_t DataWidth;				//DS
 }SPI_InitTypedef;
 
+typedef struct{
+	GPIO_TypeDef *PortSCK;
+	GPIO_TypeDef *PortMOSI;
+	GPIO_TypeDef *PortNSS;
+	GPIO_TypeDef *PortMISO;
+	uint32_t PinSCK;
+	uint32_t PinMOSI;
+	uint32_t PinNSS;
+	uint32_t PinMISO;
+}SerialPinStruct;
+
 typedef enum{
 	spi_Succses,
 	spi_Leak,
@@ -41,17 +51,35 @@ typedef enum{
 class SPI{
 private:
 	SPI_TypeDef *SPIx;
+	GPIO_TypeDef *PortNSS;
+	uint32_t PinNSS;
 public:
 	SPI(SPI_TypeDef *SPIPORT);
-	static SPIStatus Config(SPI_TypeDef *SPIx,SPI_InitTypedef *config);
-	static void StructInit(SPI_InitTypedef *config,uint32_t SPI_Mode,uint32_t NSS_Mode);
-	SPIStatus Transfer(uint8_t *data,uint16_t length);
-	void TransmitReceive(uint8_t *TXbuf,uint8_t *RXbuf,uint16_t length);
-};
+ 	uint32_t ConfigMaster(uint32_t NSS);
+	void SetRegister(SPI_InitTypedef *Config);
+	void StructInit(SPI_InitTypedef *Config,uint32_t NSS);
+	uint32_t SerialPinConfig(SerialPinStruct *obj,uint32_t SckAf,uint32_t MosiAf);
+	uint32_t SetPinNSS(SerialPinStruct *obj,uint32_t NssMode,uint32_t Alternate);
+	uint32_t SetPinMISO(SerialPinStruct *obj,uint32_t Alternate);
 
-//ErrorStatus SPI_Init(SPI_TypeDef *SPIx,SPI_InitTypedef *config);
-//void SPI_StructInit(SPI_InitTypedef *config,uint32_t SPI_Mode,uint32_t NSS_Mode);
-//uint8_t SPI_Transmit8(SPI_TypeDef *SPIx,uint8_t *buf,uint16_t length);
-void SPI_MasterTransmitReceive8(SPI_TypeDef *SPIx,uint8_t *TXbuf,uint8_t *Rxbuf,uint32_t size);
+	void MasterTransmit(uint8_t *data,uint16_t length);
+	void SoftTransfer(uint8_t *data,uint16_t length);
+	void Receive(uint8_t *RXbuf,uint16_t length);
+	void SoftReceive(uint8_t *RXbuf,uint16_t length);
+
+	uint8_t Transfer(uint8_t data);
+	void ClearFIFO(void);
+	inline void begin(void)
+	{
+		LL_SPI_Enable(SPIx);
+		while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	}
+	inline void end(void)
+	{
+		while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+		while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
+		LL_SPI_Disable(SPIx);
+	}
+};
 
 #endif /* INC_SPI_H_ */

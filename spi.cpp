@@ -7,25 +7,39 @@
 #include "spi.h"
 #include "gpio.h"
 
-SPI::SPI(SPI_TypeDef *SPIPORT)
+SPI::SPI(SPI_TypeDef *SPIPORT) :SPIx(SPIPORT),PortNSS(0),PinNSS(0)
 {
-	SPIx = SPIPORT;
+	;
 }
-
-SPIStatus SPI::Config(SPI_TypeDef *SPIx,SPI_InitTypedef *config)
+uint32_t SPI::ConfigMaster(uint32_t NSS)
 {
-	uint16_t CR1Reg = config->TransferDirection |  config->Mode |config->ClockPolarity | \
-    		config->ClockPhase | config->NSS | config->SSI | config->BaudRate | config->BitOrder;
+	SPI_InitTypedef Config;
+	uint32_t ret = spi_Succses;
 
 	if(LL_SPI_IsEnabled(SPIx) != 0)
 	{
 		return spi_ConfigError;
 	}
+	StructInit(&Config, NSS);
+	SetRegister(&Config);
+
+	if(NSS == LL_SPI_NSS_SOFT)
+	{
+		LL_SPI_Enable(SPIx);
+	}
+
+	return ret;
+}
+void SPI::SetRegister(SPI_InitTypedef *Config)
+{
+	uint16_t CR1Reg = Config->TransferDirection |  Config->Mode |Config->ClockPolarity | \
+    		Config->ClockPhase | Config->NSS | Config->SSI | Config->BaudRate | Config->BitOrder;
+
 	WRITE_REG(SPIx->CR1,CR1Reg);
 
-    MODIFY_REG(SPIx->CR2,SPI_CR2_DS | SPI_CR2_SSOE,config->DataWidth | config->SSOE);
+    MODIFY_REG(SPIx->CR2,SPI_CR2_DS | SPI_CR2_SSOE,Config->DataWidth | Config->SSOE);
 
-    if(config->DataWidth < LL_SPI_DATAWIDTH_9BIT)		//データサイズが8ビット以下ならFRXTHをセットする
+    if(Config->DataWidth < LL_SPI_DATAWIDTH_9BIT)		//データサイズが8ビット以下ならFRXTHをセットする
     {
     	LL_SPI_SetRxFIFOThreshold(SPIx, LL_SPI_RX_FIFO_TH_QUARTER);
     }
@@ -35,120 +49,162 @@ SPIStatus SPI::Config(SPI_TypeDef *SPIx,SPI_InitTypedef *config)
 
 	LL_SPI_SetStandard(SPIx, LL_SPI_PROTOCOL_MOTOROLA);
 	LL_SPI_DisableNSSPulseMgt(SPIx);
-
-    return spi_Succses;
 }
-void SPI::StructInit(SPI_InitTypedef *config,uint32_t SPI_Mode,uint32_t NSS_Mode)
+void SPI::StructInit(SPI_InitTypedef *Config,uint32_t NSS)
 {
-	config->TransferDirection = LL_SPI_FULL_DUPLEX;
-	config->DataWidth = LL_SPI_DATAWIDTH_8BIT;
-	config->ClockPolarity = LL_SPI_POLARITY_LOW;
-	config->ClockPhase = LL_SPI_PHASE_1EDGE;
-	config->BitOrder = LL_SPI_MSB_FIRST;
-	config->NSS = NSS_Mode;
-	config->Mode = SPI_Mode;
+	Config->TransferDirection = LL_SPI_FULL_DUPLEX;
+	Config->DataWidth = LL_SPI_DATAWIDTH_8BIT;
+	Config->ClockPolarity = LL_SPI_POLARITY_HIGH;
+	Config->ClockPhase = LL_SPI_PHASE_2EDGE;
+//	Config->ClockPolarity = LL_SPI_POLARITY_LOW;
+//	Config->ClockPhase = LL_SPI_PHASE_1EDGE;
+	Config->BitOrder = LL_SPI_MSB_FIRST;
+	Config->BaudRate = LL_SPI_BAUDRATEPRESCALER_DIV32;		//SPIクロック周波数分周比
+	Config->Mode = SPI_CR1_MSTR;
+	Config->SSOE = SPI_CR2_SSOE;
+	Config->NSS = NSS;
 
-	if(SPI_Mode == MSTR_MASTER)
+	if(NSS == LL_SPI_NSS_SOFT)
 	{
-		config->SSOE = SSOE_OUTPUT_ENABLE;
-		config->BaudRate = LL_SPI_BAUDRATEPRESCALER_DIV32;		//SPIクロック周波数
-	}
-	if(NSS_Mode == NSS_SOFT_CONTROL)
-	{
-		config->SSI = SPI_CR1_SSI;
-		config->SSOE = SSOE_OUTPUT_DISABLE;
+		Config->SSOE = SSOE_OUTPUT_DISABLE;
+		Config->SSI = SPI_CR1_SSI;
 	}
 }
-SPIStatus SPI::Transfer(uint8_t *data,uint16_t length)
+/**** SPI GPIO Setting ***/
+uint32_t SPI::SerialPinConfig(SerialPinStruct *obj,uint32_t SckAf,uint32_t MosiAf)
+{
+	uint32_t ret = 0;
+
+	GPIO SCK(obj->PortSCK,obj->PinSCK);
+	GPIO MOSI(obj->PortMOSI,obj->PinMOSI);
+
+	ret += SCK.Begin();
+	ret += MOSI.Begin();
+
+	SCK.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
+	MOSI.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
+
+	SCK.AlternateInit(SckAf);
+	MOSI.AlternateInit(MosiAf);
+
+	return ret;
+}
+uint32_t SPI::SetPinNSS(SerialPinStruct *obj,uint32_t NssMode,uint32_t Alternate)
+{
+	uint32_t ret = 0;
+	GPIO NSS(obj->PortNSS,obj->PinNSS);
+
+	ret += NSS.Begin();
+
+	if(NssMode == LL_SPI_NSS_HARD_OUTPUT)
+	{
+		NSS.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
+		NSS.AlternateInit(Alternate);
+	}
+	else
+	{
+		NSS.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_OUTPUT, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
+		NSS.OutputInit();
+		GPIO_WRITE(obj->PortNSS,obj->PinNSS);
+		this->PortNSS = obj->PortNSS;
+		this->PinNSS = obj->PinNSS;
+	}
+
+	return ret;
+}
+uint32_t SPI::SetPinMISO(SerialPinStruct *obj,uint32_t Alternate)
+{
+	uint32_t ret = 0;
+	GPIO MISO(obj->PortMISO,obj->PinMISO);
+
+	ret += MISO.Begin();
+	MISO.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
+	MISO.AlternateInit(Alternate);
+
+	return ret;
+}
+/*** SPI Tx&Rx ***/
+void SPI::MasterTransmit(uint8_t *data,uint16_t length)
 {
 	LL_SPI_Enable(SPIx);
 
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
 
 	for(uint16_t i = 0;i < length;i++)
 	{
 		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
 		LL_SPI_TransmitData8(SPIx, data[i]);
 	}
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
 
 	LL_SPI_Disable(SPIx);
-
-	return (LL_SPI_GetTxFIFOLevel(SPIx) == 0)? spi_Succses:spi_Leak;
 }
-void SPI::TransmitReceive(uint8_t *TXbuf,uint8_t *RXbuf,uint16_t length)
+void SPI::SoftTransfer(uint8_t *data,uint16_t length)
 {
-	LL_SPI_Enable(SPIx);
-
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+	GPIO_CLEAR(this->PortNSS,this->PinNSS);
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
 
 	for(uint16_t i = 0;i < length;i++)
 	{
 		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-		LL_SPI_TransmitData8(SPIx, TXbuf[i]);
+		LL_SPI_TransmitData8(SPIx, data[i]);
+	}
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
+
+	GPIO_WRITE(this->PortNSS,this->PinNSS);
+}
+void SPI::Receive(uint8_t *RXbuf,uint16_t length)
+{
+	LL_SPI_Enable(SPIx);
+
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+
+	for(uint16_t i = 0;i < length;i++)
+	{
+		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+		LL_SPI_TransmitData8(SPIx, 0);
 		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
 		RXbuf[i] = LL_SPI_ReceiveData8(SPIx);
 	}
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
 
 	LL_SPI_Disable(SPIx);
 }
-//void SPI_MasterTransmitReceive8(SPI_TypeDef *SPIx,uint8_t *TXbuf,uint8_t *Rxbuf,uint32_t size)
-//{
-//	LL_SPI_Enable(SPIx);
-//
-//	while(LL_SPI_IsActiveFlag_BSY(SPIx));
-//
-//	for(uint32_t i = 0;i < size; i++)
-//	{
-//		LL_SPI_TransmitData8(SPIx, TXbuf[i]);
-//		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-//		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
-//		Rxbuf[i] = LL_SPI_ReceiveData8(SPIx);
-//	}
-//	while(LL_SPI_IsActiveFlag_BSY(SPIx));
-//
-//	LL_SPI_Disable(SPIx);
-//}
-#if 0
-uint8_t SPI_Transmit8(SPI_TypeDef *SPIx,uint8_t *buf,uint16_t length)
+void SPI::SoftReceive(uint8_t *RXbuf,uint16_t length)
 {
-	uint8_t ret;
+	GPIO_CLEAR(this->PortNSS,this->PinNSS);
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
 
-	LL_SPI_Enable(SPIx);
-
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
-
-	for(uint32_t i = 0;i < length;i++)
+	for(uint16_t i = 0;i < length;i++)
 	{
 		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-		LL_SPI_TransmitData8(SPIx, buf[i]);
-	}
-
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
-	ret = LL_SPI_GetTxFIFOLevel(SPIx);		//0でない場合送信漏れがある
-
-	LL_SPI_Disable(SPIx);
-
-	return ret;
-}
-void SPI_MasterTransmitReceive8(SPI_TypeDef *SPIx,uint8_t *TXbuf,uint8_t *Rxbuf,uint32_t size)
-{
-	LL_SPI_Enable(SPIx);
-
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
-
-	for(uint32_t i = 0;i < size; i++)
-	{
-		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-		LL_SPI_TransmitData8(SPIx, TXbuf[i]);
+		LL_SPI_TransmitData8(SPIx, 0);
 		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
-		Rxbuf[i] = LL_SPI_ReceiveData8(SPIx);
-
-		Delay(1);
+		RXbuf[i] = LL_SPI_ReceiveData8(SPIx);
 	}
-	while(LL_SPI_IsActiveFlag_BSY(SPIx));
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
 
-	LL_SPI_Disable(SPIx);
+	GPIO_WRITE(this->PortNSS,this->PinNSS);
 }
-#endif
+/*** Arduino SPI ***/
+uint8_t SPI::Transfer(uint8_t data)
+{
+	LL_SPI_TransmitData8(SPIx, data);
+	while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+	while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
+
+	return LL_SPI_ReceiveData8(SPIx);
+}
+
+void SPI::ClearFIFO(void)
+{
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetRxFIFOLevel(SPIx) != LL_SPI_RX_FIFO_EMPTY)
+	{
+		LL_SPI_ReceiveData8(SPIx);
+	}
+}

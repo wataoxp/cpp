@@ -7,95 +7,119 @@
 
 #include "gpio.h"
 
-GPIO::GPIO(GPIO_TypeDef *GPIOx,uint32_t pin)
+GPIO::GPIO(GPIO_TypeDef *GPIOPORT,uint32_t pin) :GPIOx(GPIOPORT),PinPos(pin)
 {
-	GPIOPORT = GPIOx;
-	PINx = pin;
+	;
 }
-
-uint32_t GPIO::GetPortNumber(void)
+inline void GPIO::SetPinSpeed(GPIO_TypeDef *GPIOx,uint32_t pinpos,uint32_t speed)
 {
-	if(GPIOPORT == GPIOA)
+	MODIFY_REG(GPIOx->OSPEEDR,GPIO_OSPEEDR_OSPEED0 << (pinpos * 2),(speed << (pinpos * 2)));
+}
+inline void GPIO::SetPinPull(GPIO_TypeDef *GPIOx,uint32_t pinpos,uint32_t pull)
+{
+	MODIFY_REG(GPIOx->PUPDR,GPIO_PUPDR_PUPD0 << (pinpos * 2),(pull << (pinpos * 2)));
+}
+inline void GPIO::SetPinMode(GPIO_TypeDef *GPIOx,uint32_t pinpos,uint32_t mode)
+{
+	MODIFY_REG(GPIOx->MODER,GPIO_MODER_MODE0 << (pinpos * 2),(mode << (pinpos * 2)));
+}
+inline void GPIO::SetAlternate0_7(GPIO_TypeDef* GPIOx,uint32_t pinpos,uint32_t alternate)
+{
+	MODIFY_REG(GPIOx->AFR[0],GPIO_AFRL_AFSEL0 << (pinpos * 4),alternate << (pinpos * 4));
+}
+inline void GPIO::SetAlternate8_15(GPIO_TypeDef* GPIOx,uint32_t pinpos,uint32_t alternate)
+{
+	pinpos -= 8;
+	MODIFY_REG(GPIOx->AFR[1],GPIO_AFRH_AFSEL8 << (pinpos * 4),alternate << (pinpos * 4));
+}
+inline void GPIO::SetOutputPinType(GPIO_TypeDef *GPIOx,uint32_t pinmask,uint32_t outputType)
+{
+	MODIFY_REG(GPIOx->OTYPER,pinmask,(pinmask * outputType));
+}
+void GPIO::SetParameter(uint8_t Pull,uint8_t Mode,uint8_t Speed,uint8_t Type)
+{
+	Config.Pull = Pull;
+	Config.Mode = Mode;
+	Config.Speed = Speed;
+	Config.OutputType = Type;
+}
+uint32_t GPIO::GetPortNumber(GPIO_TypeDef *GPIOx)
+{
+	uint32_t Ret;
+
+	if(GPIOx == GPIOA)
 	{
-		Periphs = 1 << PORTA;
+		Ret = 1 << PORTA;
 	}
-	else if(GPIOPORT == GPIOB)
+	else if(GPIOx == GPIOB)
 	{
-		Periphs = 1 << PORTB;
+		Ret = 1 << PORTB;
 	}
-	else if(GPIOPORT == GPIOC)
+	else if(GPIOx == GPIOC)
 	{
-		Periphs = 1 << PORTC;
+		Ret = 1 << PORTC;
 	}
-	else if(GPIOPORT == GPIOD)
+	else if(GPIOx == GPIOD)
 	{
-		Periphs = 1 << PORTD;
+		Ret = 1 << PORTD;
 	}
-	else if(GPIOPORT == GPIOF)
+	else if(GPIOx == GPIOF)
 	{
-		Periphs = 1 << PORTF;
+		Ret = 1 << PORTF;
 	}
 	else
 	{
-		Periphs = 0;
+		Ret = 0;
 	}
 
-	return Periphs;
+	return Ret;
 }
-GPIO_Code GPIO::OutputInit(GPIO_InitTypedef *InitStruct)
+GPIO_Code GPIO::Begin(void)
 {
-	//GPIO::OutputInit(GPIOPORT, InitStruct);
-	return this->OutputInit(GPIOPORT, InitStruct,PINx);
-}
-GPIO_Code GPIO::OutputInit(GPIO_TypeDef *GPIOx,GPIO_InitTypedef *InitStruct,uint32_t pinpos)
-{
-	uint32_t pin = pinpos;
+	uint32_t Periphs = GetPortNumber(GPIOx);
+	if(!Periphs)
+	{
+		return GPIO_NoPort;
+	}
 
-	if((pin == Pin13) || (pin == Pin14))
+	if(LL_IOP_GRP1_IsEnabledClock(Periphs) == 0)
+	{
+		LL_IOP_GRP1_EnableClock(Periphs);
+	}
+
+	if((PinPos == Pin13) || (PinPos == Pin14))
 	{
 		if(GPIOx == GPIOA)
 		{
 			return SWDPin;
 		}
 	}
-	GPIO_CLEAR(GPIOx,pin);
-	GPIO::SetPinSpeed(GPIOx, pin, InitStruct->Speed);
-	GPIO::SetOutputPinType(GPIOx, (1 << pin), InitStruct->OutputType);
-
-
-	if(InitStruct->Mode == LL_GPIO_MODE_ALTERNATE)
-	{
-		if(pinpos < Pin8)
-		{
-			GPIO::SetAlternate0_7(GPIOx,pin,InitStruct->Alternate);
-		}
-		else
-		{
-			GPIO::SetAlternate8_15(GPIOx,pin,InitStruct->Alternate);
-		}
-	}
-	GPIO::SetPinPull(GPIOx,pin,InitStruct->Pull);
-	GPIO::SetPinMode(GPIOx,pin,InitStruct->Mode);
-
 	return GPIO_Success;
 }
 
-GPIO_Code GPIO::InputInit(GPIO_TypeDef *GPIOx,GPIO_Port PORTx,uint32_t pinpos,uint32_t Mode,uint32_t Pull)
+void GPIO::OutputInit(void)
 {
-	if((pinpos == Pin13) || (pinpos == Pin14))
-	{
-		if(GPIOx == GPIOA)
-		{
-			return SWDPin;
-		}
-	}
+	GPIO_CLEAR(GPIOx,PinPos);
+	SetPinSpeed(GPIOx, PinPos, Config.Speed);
+	SetOutputPinType(GPIOx, (1 << PinPos), Config.OutputType);
 
-	if(LL_IOP_GRP1_IsEnabledClock(1 << PORTx) == 0)
+	SetPinPull(GPIOx, PinPos, Config.Pull);
+	SetPinMode(GPIOx, PinPos, Config.Mode);
+}
+void GPIO::AlternateInit(uint32_t Alternate)
+{
+	OutputInit();
+	if(PinPos < Pin8)
 	{
-		LL_IOP_GRP1_EnableClock(1 << PORTx);
+		SetAlternate0_7(GPIOx, PinPos, Alternate);
 	}
-	GPIO::SetPinPull(GPIOx,pinpos,Pull);
-	GPIO::SetPinMode(GPIOx,pinpos,Mode);
-
-	return GPIO_Success;
+	else
+	{
+		SetAlternate8_15(GPIOx, PinPos, Alternate);
+	}
+}
+void GPIO::InputInit(void)
+{
+	SetPinPull(GPIOx, PinPos, Config.Pull);
+	SetPinMode(GPIOx, PinPos, Config.Mode);
 }

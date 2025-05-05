@@ -50,6 +50,7 @@ typedef enum{
 	PORTC,
 	PORTD,
 	PORTF = 5,
+	NoPort,
 }GPIO_Port;
 
 typedef enum{
