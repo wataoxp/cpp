@@ -7,12 +7,12 @@
 
 #include "dma.h"
 
-DMA::DMA(DMA_TypeDef *DMAport,uint32_t channel) :DMAx(DMAport),Channel(channel)
+DMA::DMA(DMA_TypeDef *DMAport) :DMAx(DMAport)
 {
 	;
 }
 
-void DMA::Config(uint32_t Request)
+void DMA::Config(uint32_t Request,uint32_t Channel)
 {
 	if(LL_AHB1_GRP1_IsEnabledClock(LL_AHB1_GRP1_PERIPH_DMA1) == 0)
 	{
@@ -30,7 +30,7 @@ void DMA::Config(uint32_t Request)
 	LL_DMA_SetMemorySize(DMAx, Channel, LL_DMA_MDATAALIGN_BYTE);
 }
 
-void DMA::SetISR(void)
+void DMA::SetISR(uint32_t Channel)
 {
 	LL_DMA_DisableChannel(DMAx, Channel);
 	LL_DMA_EnableIT_TE(DMAx, Channel);
@@ -38,7 +38,7 @@ void DMA::SetISR(void)
 	LL_DMA_DisableIT_HT(DMAx, Channel);
 }
 
-uint32_t DMA::AddressSet(uint8_t *MemoryAddress,uint32_t *PeriphAddress)
+uint32_t DMA::AddressSet(uint32_t Channel,uint8_t *MemoryAddress,uint32_t *PeriphAddress)
 {
 	if(MemoryAddress == nullptr || PeriphAddress == nullptr)
 	{
@@ -51,7 +51,7 @@ uint32_t DMA::AddressSet(uint8_t *MemoryAddress,uint32_t *PeriphAddress)
 	return 0;
 }
 
-uint32_t DMA::AddressSetM2M(uint8_t *SrcAddress,uint8_t *DstAddress)
+uint32_t DMA::AddressSetM2M(uint32_t Channel,uint8_t *SrcAddress,uint8_t *DstAddress)
 {
 	if(SrcAddress == nullptr || DstAddress == nullptr)
 	{
@@ -66,20 +66,20 @@ uint32_t DMA::AddressSetM2M(uint8_t *SrcAddress,uint8_t *DstAddress)
 }
 
 /**** SPI DMA ****/
-void DMA::SPItoDMA(SPI_TypeDef *SPIx,uint8_t *MemoryAddress)
-{
-	LL_SPI_EnableDMAReq_TX(SPIx);
-	AddressSet(MemoryAddress, (uint32_t*)LL_SPI_DMA_GetRegAddr(SPIx));
-
-	if(LL_SPI_IsEnabled(SPIx) == 0)
-	{
-		LL_SPI_Enable(SPIx);
-	}
-}
+//void DMA::SPItoDMA(SPI_TypeDef *SPIx,uint8_t *MemoryAddress)
+//{
+//	LL_SPI_EnableDMAReq_TX(SPIx);
+//	AddressSet(MemoryAddress, (uint32_t*)LL_SPI_DMA_GetRegAddr(SPIx));
+//
+//	if(LL_SPI_IsEnabled(SPIx) == 0)
+//	{
+//		LL_SPI_Enable(SPIx);
+//	}
+//}
 
 /**** DMA Func ***/
 
-void DMA::StartDMA(uint32_t length)
+void DMA::StartDMA(uint32_t Channel,uint32_t length)
 {
 	LL_DMA_SetDataLength(DMAx, Channel, length);		//転送完了後は0になっているので再セット
 	LL_DMA_EnableChannel(DMAx, Channel);

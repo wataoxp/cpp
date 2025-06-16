@@ -13,15 +13,14 @@
 class DMA{
 private:
 	DMA_TypeDef *DMAx;
-	uint32_t Channel;
-	void SetISR(void);
+	void SetISR(uint32_t Channel);
 public:
-	DMA(DMA_TypeDef *DMAport,uint32_t channel);
-	void Config(uint32_t Request);
-	uint32_t AddressSet(uint8_t *MemoryAddress,uint32_t *PeriphAddress);
-	uint32_t AddressSetM2M(uint8_t *SrcAddress,uint8_t *DstAddress);
+	DMA(DMA_TypeDef *DMAport);
+	void Config(uint32_t Request,uint32_t Channel);
+	uint32_t AddressSet(uint32_t Channel,uint8_t *MemoryAddress,uint32_t *PeriphAddress);
+	uint32_t AddressSetM2M(uint32_t Channel,uint8_t *SrcAddress,uint8_t *DstAddress);
 	void SPItoDMA(SPI_TypeDef *SPIx,uint8_t *MemoryAddress);
-	void StartDMA(uint32_t length);
+	void StartDMA(uint32_t Channel,uint32_t length);
 	uint32_t StopDMAisChannel1(void);
 	uint32_t StopDMAisChannel2(void);
 
