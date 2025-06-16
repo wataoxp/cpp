@@ -10,16 +10,14 @@
 
 #include "periph.h"
 
-#define GPIO_WRITE(GPIOx,Pin) (GPIOx->BSRR = 1 << Pin)
-#define GPIO_CLEAR(GPIOx,Pin) (GPIOx->BRR = 1 << Pin)
-#define GPIO_READ(GPIOx,Pin) ((GPIOx->IDR & 1 << Pin) >> Pin)
-
-typedef enum{
-	GPIO_Success,
-	GPIO_Failed,
-	GPIO_NoPort,
-	SWDPin,
-}GPIO_Code;
+namespace GPIOs{
+	typedef enum{
+		Success,
+		Failed,
+		nullPort,
+		SWDPin,
+	}GPIO_Code;
+}
 
 typedef struct{
 	uint32_t Mode;
@@ -42,7 +40,7 @@ private:
 	inline void SetOutputPinType(GPIO_TypeDef *GPIOx,uint32_t pinmask,uint32_t outputType);
 public:
 	GPIO(GPIO_TypeDef *GPIOx,uint32_t pin);
-	GPIO_Code Begin(void);
+	uint32_t Begin(void);
 	void SetParameter(uint8_t Pull,uint8_t Mode,uint8_t Speed,uint8_t Type);
 	uint32_t GetPortNumber(GPIO_TypeDef *GPIOx);
 	void OutputInit(void);

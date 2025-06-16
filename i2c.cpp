@@ -14,6 +14,8 @@
 constexpr uint8_t DirectionWrite = 0;
 constexpr uint8_t DirectionRead = 1;
 
+using namespace Wires;
+
 I2C::I2C(I2C_TypeDef *I2CPORT) :I2Cx(I2CPORT)
 {
 	;
@@ -22,6 +24,17 @@ I2C::I2C(I2C_TypeDef *I2CPORT) :I2Cx(I2CPORT)
 void I2C::ConfigMaster(void)
 {
 	uint32_t Timing = I2C_CLOCK_400;
+	uint32_t Periphs;
+
+	if(I2Cx == I2C1)
+	{
+		Periphs = LL_APB1_GRP1_PERIPH_I2C1;
+	}
+	else
+	{
+		Periphs = LL_APB1_GRP1_PERIPH_I2C2;
+	}
+	LL_APB1_GRP1_EnableClock(Periphs);
 
 	LL_I2C_Disable(I2Cx);
 	LL_I2C_ConfigFilters(I2Cx, LL_I2C_ANALOGFILTER_ENABLE,0);
@@ -43,13 +56,13 @@ uint32_t I2C::WirePinConfig(WirePinStruct *obj)
 	SCL.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_OPENDRAIN);
 	SDA.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_OPENDRAIN);
 
-	SCL.AlternateInit(LL_GPIO_AF_6);
-	SDA.AlternateInit(LL_GPIO_AF_6);
+	SCL.AlternateInit(obj->AlternateSCL);
+	SDA.AlternateInit(obj->AlternateSDA);
 
 	return ret;
 }
 /* I2C Function */
-WireStatus I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
+uint32_t I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
 {
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
@@ -65,9 +78,9 @@ WireStatus I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
-	return WireStatus::succses;
+	return Success;
 }
-WireStatus I2C::Transmit(uint8_t addr,uint8_t Reg,uint8_t *TxBuf,uint8_t length)
+uint32_t I2C::Transmit(uint8_t addr,uint8_t Reg,uint8_t *TxBuf,uint8_t length)
 {
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
@@ -86,7 +99,7 @@ WireStatus I2C::Transmit(uint8_t addr,uint8_t Reg,uint8_t *TxBuf,uint8_t length)
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
-	return WireStatus::succses;
+	return Success;
 }
 void I2C::Write(uint8_t addr,uint8_t Reg)
 {
@@ -117,7 +130,7 @@ void I2C::Write(uint8_t addr,uint8_t Reg,uint8_t Data)
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 }
-WireStatus I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
+uint32_t I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
 {
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
@@ -133,7 +146,7 @@ WireStatus I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
-	return WireStatus::succses;
+	return Success;
 }
 void I2C::ConfigSlave(uint8_t OwnAddr)
 {
@@ -159,15 +172,15 @@ void I2C::ConfigSlave(uint8_t OwnAddr)
 	LL_I2C_Enable(I2Cx);
 }
 
-//WireStatus I2C::Write(uint8_t val)
+//uint32_t I2C::Write(uint8_t val)
 //{
 //	if(index >= I2C_BUFFER_SIZE)
 //	{
-//		return WireStatus::TxOver;
+//		return uint32_t::TxOver;
 //	}
 //	Buffer[index++] = val;
 //
-//	return WireStatus::succses;
+//	return uint32_t::succses;
 //}
 ///* Wire Functions */
 //void I2C::beginTransmission(uint8_t addr)
@@ -175,17 +188,17 @@ void I2C::ConfigSlave(uint8_t OwnAddr)
 //	address = addr;
 //	index = 0;
 //}
-//WireStatus I2C::Write(uint8_t *data,uint8_t length)
+//uint32_t I2C::Write(uint8_t *data,uint8_t length)
 //{
 //	if((index + length) >= I2C_BUFFER_SIZE)
 //	{
-//		return WireStatus::TxOver;
+//		return uint32_t::TxOver;
 //	}
 //	for(uint8_t i = 0;i < length;i++)
 //	{
 //		Buffer[index++] = data[i];
 //	}
-//	return WireStatus::succses;
+//	return uint32_t::succses;
 //}
 //void I2C::endTransmission(void)
 //{
@@ -215,7 +228,7 @@ void I2C::ConfigSlave(uint8_t OwnAddr)
 //	}
 //	index = 0;
 //}
-//WireStatus I2C::requestFrom(uint8_t addr,uint8_t length)
+//uint32_t I2C::requestFrom(uint8_t addr,uint8_t length)
 //{
 //	uint8_t i;
 //
@@ -233,10 +246,10 @@ void I2C::ConfigSlave(uint8_t OwnAddr)
 //
 //	index = 0;
 //
-//	return (i == length)? WireStatus::succses:WireStatus::RxOver;
+//	return (i == length)? uint32_t::succses:uint32_t::RxOver;
 //}
 //
-//WireStatus I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t Reg)
+//uint32_t I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t Reg)
 //{
 //	this->beginTransmission(addr);
 //	this->Write(Reg);
@@ -244,7 +257,7 @@ void I2C::ConfigSlave(uint8_t OwnAddr)
 //
 //	return this->requestFrom(addr, length);
 //}
-//WireStatus I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t HighByte,uint8_t LowByte)
+//uint32_t I2C::requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t HighByte,uint8_t LowByte)
 //{
 //	this->beginTransmission(addr);
 //	this->Write(HighByte);
@@ -261,15 +274,15 @@ void I2C::ConfigSlave(uint8_t OwnAddr)
 //	}
 //	return 0;
 //}
-//WireStatus I2C::Read(uint8_t *buf,uint8_t length)
+//uint32_t I2C::Read(uint8_t *buf,uint8_t length)
 //{
 //	if(length > I2C_BUFFER_SIZE)
 //	{
-//		return WireStatus::RxOver;
+//		return uint32_t::RxOver;
 //	}
 //	for(uint8_t i = 0;i < length;i++)
 //	{
 //		buf[i] = Buffer[i];
 //	}
-//	return WireStatus::succses;
+//	return uint32_t::succses;
 //}

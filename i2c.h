@@ -8,8 +8,7 @@
 #ifndef INC_I2C_H_
 #define INC_I2C_H_
 
-#include <stdint.h>
-#include "stm32g0xx_ll_i2c.h"
+#include "periph.h"
 
 //I2Cスレーブメモリアドレス幅(byte)
 #define I2C_MEMADD_SIZE_8BIT UINT8_C(1)
@@ -19,16 +18,21 @@
 #define I2C_OA1_7BIT_Pos 1
 #define I2C_CLOCK_400 UINT32_C(0x00C12166)
 
-enum class WireStatus : uint8_t{
-	succses = 0,
-	TxOver,
-	RxOver,
-};
+namespace Wires{
+	typedef enum{
+		Success,
+		TxOver,
+		RxOver,
+	}WireStatus;
+}
+
 typedef struct{
 	GPIO_TypeDef *PortSCL;
 	GPIO_TypeDef *PortSDA;
 	uint32_t PinSCL;
 	uint32_t PinSDA;
+	uint32_t AlternateSCL;
+	uint32_t AlternateSDA;
 }WirePinStruct;
 
 class I2C{
@@ -39,9 +43,9 @@ public:
 	void ConfigMaster(void);
 	void ConfigSlave(uint8_t OwnAddr);
 	uint32_t WirePinConfig(WirePinStruct *Parameter);
-	WireStatus Transmit(uint8_t addr,uint8_t *data,uint8_t length);
-    WireStatus Transmit(uint8_t addr,uint8_t Reg,uint8_t *TxBuf,uint8_t length);
-	WireStatus Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length);
+	uint32_t Transmit(uint8_t addr,uint8_t *data,uint8_t length);
+    uint32_t Transmit(uint8_t addr,uint8_t Reg,uint8_t *TxBuf,uint8_t length);
+	uint32_t Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length);
 	void Write(uint8_t addr,uint8_t Reg);
 	void Write(uint8_t addr,uint8_t Reg,uint8_t Data);
 };
@@ -80,19 +84,19 @@ private:
 	uint8_t index;
 	uint8_t Buffer[I2C_BUFFER_HALF];
 	void endTransmission(WireEndMode mode);
-	WireStatus requestFrom(uint8_t addr,uint8_t length);
+	uint32_t requestFrom(uint8_t addr,uint8_t length);
 public:
 	I2C(I2C_TypeDef *I2CPORT);
 	void ConfigMaster(void);
 	void ConfigSlave(uint8_t OwnAddr);
 	void beginTransmission(uint8_t addr);
-	WireStatus Write(uint8_t val);
-	WireStatus Write(uint8_t *data,uint8_t length);
+	uint32_t Write(uint8_t val);
+	uint32_t Write(uint8_t *data,uint8_t length);
 	void endTransmission(void);
-	WireStatus requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t Reg);
-	WireStatus requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t HighByte,uint8_t LowByte);
+	uint32_t requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t Reg);
+	uint32_t requestFrom(uint8_t addr,uint8_t length,WireEndMode mode,uint8_t HighByte,uint8_t LowByte);
 	uint8_t Read(void);
-	WireStatus Read(uint8_t *buf,uint8_t length);
+	uint32_t Read(uint8_t *buf,uint8_t length);
 };
 *********************************************************************/
 #endif /* INC_I2C_H_ */

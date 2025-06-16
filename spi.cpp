@@ -5,31 +5,106 @@
  *      Author: wataoxp
  */
 #include "spi.h"
-#include "gpio.h"
 
-SPI::SPI(SPI_TypeDef *SPIPORT) :SPIx(SPIPORT),PortNSS(0),PinNSS(0)
+using namespace Serials;
+
+SPI::SPI(SPI_TypeDef *SPIPORT) :SPIx(SPIPORT)
 {
 	;
 }
-uint32_t SPI::ConfigMaster(uint32_t NSS)
+void SPI::Config(SPI_InitTypedef *pConfig)
 {
-	SPI_InitTypedef Config;
-	uint32_t ret = spi_Succses;
-
-	if(LL_SPI_IsEnabled(SPIx) != 0)
+	if(LL_SPI_IsEnabled(SPIx))
 	{
-		return spi_ConfigError;
-	}
-	StructInit(&Config, NSS);
-	SetRegister(&Config);
-
-	if(NSS == LL_SPI_NSS_SOFT)
-	{
-		LL_SPI_Enable(SPIx);
+		LL_SPI_Disable(SPIx);
 	}
 
-	return ret;
+	if(SPIx == SPI1)
+	{
+		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_SPI1);
+	}
+	else
+	{
+		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_SPI2);
+	}
+
+	LL_SPI_SetTransferDirection(SPIx, pConfig->TransferDirection);
+	LL_SPI_SetClockPolarity(SPIx, pConfig->ClockPolarity);
+	LL_SPI_SetClockPhase(SPIx, pConfig->ClockPhase);
+	LL_SPI_SetTransferBitOrder(SPIx, pConfig->BitOrder);
+	LL_SPI_SetBaudRatePrescaler(SPIx, pConfig->BaudRate);
+	LL_SPI_SetMode(SPIx, pConfig->Mode);
+
+	LL_SPI_SetDataWidth(SPIx, pConfig->DataWidth);
+	LL_SPI_SetNSSMode(SPIx, pConfig->NSS);
+
+    if(pConfig->DataWidth < LL_SPI_DATAWIDTH_9BIT)		//データサイズが8ビット以下ならFRXTHをセットする
+    {
+    	LL_SPI_SetRxFIFOThreshold(SPIx, LL_SPI_RX_FIFO_TH_QUARTER);
+    }
+    LL_SPI_DisableCRC(SPIx);
+    LL_I2S_Disable(SPIx);								//I2SとSPIは排他的な関係
+
+	LL_SPI_SetStandard(SPIx, LL_SPI_PROTOCOL_MOTOROLA);
+	LL_SPI_DisableNSSPulseMgt(SPIx);
 }
+/*** SPI Tx&Rx ***/
+void SPI::MasterTransmit(uint8_t *data,uint16_t length)
+{
+	LL_SPI_Enable(SPIx);
+
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+
+	for(uint16_t i = 0;i < length;i++)
+	{
+		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+		LL_SPI_TransmitData8(SPIx, data[i]);
+	}
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
+
+	LL_SPI_Disable(SPIx);
+}
+
+//スレーブモード時はSPI有効をこの関数が呼ばれる前に実行しておくこと
+void SPI::Receive(uint8_t *RXbuf,uint16_t length)
+{
+	LL_SPI_Enable(SPIx);
+
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+
+	for(uint16_t i = 0;i < length;i++)
+	{
+		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
+		LL_SPI_TransmitData8(SPIx, 0);
+		RXbuf[i] = LL_SPI_ReceiveData8(SPIx);
+	}
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
+
+	LL_SPI_Disable(SPIx);
+}
+/*** Arduino SPI ***/
+uint8_t SPI::Transfer(uint8_t data)
+{
+	LL_SPI_TransmitData8(SPIx, data);
+	while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
+	while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
+
+	return LL_SPI_ReceiveData8(SPIx);
+}
+
+void SPI::ClearFIFO(void)
+{
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetRxFIFOLevel(SPIx) != LL_SPI_RX_FIFO_EMPTY)
+	{
+		LL_SPI_ReceiveData8(SPIx);
+	}
+}
+
+#if 0
 void SPI::SetRegister(SPI_InitTypedef *Config)
 {
 	uint16_t CR1Reg = Config->TransferDirection |  Config->Mode |Config->ClockPolarity | \
@@ -71,6 +146,7 @@ void SPI::StructInit(SPI_InitTypedef *Config,uint32_t NSS)
 	}
 }
 /**** SPI GPIO Setting ***/
+//AFもメンバに入れる
 uint32_t SPI::SerialPinConfig(SerialPinStruct *obj,uint32_t SckAf,uint32_t MosiAf)
 {
 	uint32_t ret = 0;
@@ -105,9 +181,7 @@ uint32_t SPI::SetPinNSS(SerialPinStruct *obj,uint32_t NssMode,uint32_t Alternate
 	{
 		NSS.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_OUTPUT, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
 		NSS.OutputInit();
-		GPIO_WRITE(obj->PortNSS,obj->PinNSS);
-		this->PortNSS = obj->PortNSS;
-		this->PinNSS = obj->PinNSS;
+		GPIO_WRITE(obj->PortNSS,obj->PinNSS);			//アクティブローなのでハイにしておく
 	}
 
 	return ret;
@@ -123,88 +197,4 @@ uint32_t SPI::SetPinMISO(SerialPinStruct *obj,uint32_t Alternate)
 
 	return ret;
 }
-/*** SPI Tx&Rx ***/
-void SPI::MasterTransmit(uint8_t *data,uint16_t length)
-{
-	LL_SPI_Enable(SPIx);
-
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-
-	for(uint16_t i = 0;i < length;i++)
-	{
-		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-		LL_SPI_TransmitData8(SPIx, data[i]);
-	}
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
-
-	LL_SPI_Disable(SPIx);
-}
-void SPI::SoftTransfer(uint8_t *data,uint16_t length)
-{
-	GPIO_CLEAR(this->PortNSS,this->PinNSS);
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-
-	for(uint16_t i = 0;i < length;i++)
-	{
-		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-		LL_SPI_TransmitData8(SPIx, data[i]);
-	}
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
-
-	GPIO_WRITE(this->PortNSS,this->PinNSS);
-}
-void SPI::Receive(uint8_t *RXbuf,uint16_t length)
-{
-	LL_SPI_Enable(SPIx);
-
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-
-	for(uint16_t i = 0;i < length;i++)
-	{
-		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-		LL_SPI_TransmitData8(SPIx, 0);
-		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
-		RXbuf[i] = LL_SPI_ReceiveData8(SPIx);
-	}
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
-
-	LL_SPI_Disable(SPIx);
-}
-void SPI::SoftReceive(uint8_t *RXbuf,uint16_t length)
-{
-	GPIO_CLEAR(this->PortNSS,this->PinNSS);
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-
-	for(uint16_t i = 0;i < length;i++)
-	{
-		while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-		LL_SPI_TransmitData8(SPIx, 0);
-		while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
-		RXbuf[i] = LL_SPI_ReceiveData8(SPIx);
-	}
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
-
-	GPIO_WRITE(this->PortNSS,this->PinNSS);
-}
-/*** Arduino SPI ***/
-uint8_t SPI::Transfer(uint8_t data)
-{
-	LL_SPI_TransmitData8(SPIx, data);
-	while(LL_SPI_IsActiveFlag_TXE(SPIx) == 0);
-	while(LL_SPI_IsActiveFlag_RXNE(SPIx) == 0);
-
-	return LL_SPI_ReceiveData8(SPIx);
-}
-
-void SPI::ClearFIFO(void)
-{
-	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-	while(LL_SPI_GetRxFIFOLevel(SPIx) != LL_SPI_RX_FIFO_EMPTY)
-	{
-		LL_SPI_ReceiveData8(SPIx);
-	}
-}
+#endif

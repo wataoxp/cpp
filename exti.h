@@ -14,7 +14,7 @@
 #define IOPORT_SPACE 0x00000400UL
 
 typedef struct{
-	IRQn_Type IRQn;
+	IRQn_Type IRQx;
 	uint32_t PinPos;
 	uint8_t Port;
 	GPIO_TypeDef *GPIOx;

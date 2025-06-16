@@ -22,11 +22,11 @@ void EXTIR::Init(void)
 }
 void EXTIR::StructInit(uint32_t pin)
 {
-	Exti->IRQn = CheckExtiLine(pin);
+	Exti->IRQx = CheckExtiLine(pin);
 	Exti->ExtiLine = 1 << pin;
 
-	__NVIC_SetPriority(Exti->IRQn, Exti->prime);
-	__NVIC_EnableIRQ(Exti->IRQn);
+	__NVIC_SetPriority(Exti->IRQx, Exti->prime);
+	__NVIC_EnableIRQ(Exti->IRQx);
 }
 void EXTIR::SetSource(uint8_t port,uint32_t pin)
 {
@@ -77,21 +77,19 @@ void EXTIR::ExtiTrigger(uint8_t Trigger,uint32_t Line)
 }
 inline IRQn_Type EXTIR::CheckExtiLine(uint32_t pin)
 {
-	IRQn_Type ret;
 
 	if(pin <= Pin1)
 	{
-		ret = EXTI0_1_IRQn;
+		 return EXTI0_1_IRQn;
 	}
 	else if(pin <= Pin3)
 	{
-		ret = EXTI2_3_IRQn;
+		 return EXTI2_3_IRQn;
 	}
-	else if(pin <= Pin15)
+	else
 	{
-		ret = EXTI4_15_IRQn;
+		 return EXTI4_15_IRQn;
 	}
-	return ret;
 }
 inline GPIO_Port EXTIR::CheckPort(GPIO_TypeDef *GPIOx)
 {

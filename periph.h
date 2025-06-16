@@ -22,8 +22,13 @@
 #include "stm32g0xx_ll_utils.h"
 #include "stm32g0xx_ll_pwr.h"
 #include "stm32g0xx_ll_dma.h"
-#include "stm32g0xx_ll_tim.h"
 #include "stm32g0xx_ll_gpio.h"
+
+/* Add Peripherals */
+#include "./stm32g0xx/stm32g0xx_ll_tim.h"
+#include "./stm32g0xx/stm32g0xx_ll_i2c.h"
+#include "./stm32g0xx/stm32g0xx_ll_spi.h"
+#include "./stm32g0xx/stm32g0xx_ll_adc.h"
 
 typedef enum{
 	Pin0,
@@ -59,6 +64,9 @@ typedef enum{
 	LowPriority,
 }NVIC_Prioritys;
 
+#define GPIO_WRITE(GPIOx,Pin) (GPIOx->BSRR = 1 << Pin)
+#define GPIO_CLEAR(GPIOx,Pin) (GPIOx->BRR = 1 << Pin)
+#define GPIO_READ(GPIOx,Pin) ((GPIOx->IDR & 1 << Pin) >> Pin)
 
 #endif
 

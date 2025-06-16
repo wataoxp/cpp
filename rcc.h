@@ -10,9 +10,6 @@
 
 #include "periph.h"
 
-#define SYSINT_ENABLE SysTick_CTRL_TICKINT_Msk
-#define SYSINT_DISABLE 0
-
 typedef struct{
 	uint32_t Latency;		//FLASH->ACR,FlashAccessWait
 	uint32_t PLLSrc;
@@ -24,12 +21,6 @@ typedef struct{
 	uint32_t SysClkSrc;
 	uint32_t clock;
 }RCC_InitTypedef;
-
-static inline void SysTick_ConfigISR(uint8_t valid)
-{
-	SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-	SysTick->CTRL |= valid;
-}
 
 void RCC_InitG0(RCC_InitTypedef *rcc);
 uint32_t SysTick_Init(uint32_t Ticks);

@@ -7,6 +7,8 @@
 
 #include "gpio.h"
 
+using namespace GPIOs;
+
 GPIO::GPIO(GPIO_TypeDef *GPIOPORT,uint32_t pin) :GPIOx(GPIOPORT),PinPos(pin)
 {
 	;
@@ -74,12 +76,12 @@ uint32_t GPIO::GetPortNumber(GPIO_TypeDef *GPIOx)
 
 	return Ret;
 }
-GPIO_Code GPIO::Begin(void)
+uint32_t GPIO::Begin(void)
 {
 	uint32_t Periphs = GetPortNumber(GPIOx);
 	if(!Periphs)
 	{
-		return GPIO_NoPort;
+		return nullPort;
 	}
 
 	if(LL_IOP_GRP1_IsEnabledClock(Periphs) == 0)
@@ -94,7 +96,7 @@ GPIO_Code GPIO::Begin(void)
 			return SWDPin;
 		}
 	}
-	return GPIO_Success;
+	return Success;
 }
 
 void GPIO::OutputInit(void)
