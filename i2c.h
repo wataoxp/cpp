@@ -21,31 +21,57 @@
 namespace Wires{
 	typedef enum{
 		Success,
+		Failed,
 		TxOver,
 		RxOver,
 	}WireStatus;
+
+	typedef enum{
+		MemAddSize8 = 1,
+		MemAddSize16 = 2,
+	}MemAdd;
 }
 
-typedef struct{
-	GPIO_TypeDef *PortSCL;
-	GPIO_TypeDef *PortSDA;
-	uint32_t PinSCL;
-	uint32_t PinSDA;
-	uint32_t AlternateSCL;
-	uint32_t AlternateSDA;
-}WirePinStruct;
+//typedef struct{
+//	GPIO_TypeDef *PortSCL;
+//	GPIO_TypeDef *PortSDA;
+//	uint32_t PinSCL;
+//	uint32_t PinSDA;
+//	uint32_t AlternateSCL;
+//	uint32_t AlternateSDA;
+//}WirePinStruct;
 
 class I2C{
 private:
 	I2C_TypeDef *I2Cx;
+	uint32_t TimeOut;
+	inline uint8_t GetMemAddLowByte(uint16_t address);
+	inline uint8_t GetMemAddHighByte(uint16_t address);
 public:
 	I2C(I2C_TypeDef *I2CPORT);
 	void ConfigMaster(void);
 	void ConfigSlave(uint8_t OwnAddr);
-	uint32_t WirePinConfig(WirePinStruct *Parameter);
-	uint32_t Transmit(uint8_t addr,uint8_t *data,uint8_t length);
-    uint32_t Transmit(uint8_t addr,uint8_t Reg,uint8_t *TxBuf,uint8_t length);
-	uint32_t Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length);
+
+	inline void Enable(void)
+	{
+		LL_I2C_Enable(I2Cx);
+	}
+	inline void Disable(void)
+	{
+		LL_I2C_Disable(I2Cx);
+		/* P935、PEクリア後は3APBクロック分0で維持する。APB分周無と仮定したウェイト */
+		__NOP();
+		__NOP();
+		__NOP();
+	}
+
+	uint32_t IsActiveDevice(uint8_t addr,uint32_t TimeOut);
+
+	uint32_t Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length);
+    uint32_t MemWrite(uint8_t addr,uint16_t Reg,Wires::MemAdd MemAddSize,uint8_t *TxBuf,uint8_t length);
+    uint32_t MemRead(uint8_t addr,uint16_t Reg,Wires::MemAdd MemAddSize,uint8_t *RxBuf,uint8_t length);
+
+    uint32_t Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length);
 	void Write(uint8_t addr,uint8_t Reg);
 	void Write(uint8_t addr,uint8_t Reg,uint8_t Data);
 };

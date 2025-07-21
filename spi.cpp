@@ -23,11 +23,12 @@ void SPI::Config(SPI_InitTypedef *pConfig)
 	{
 		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_SPI1);
 	}
+#ifdef STM32G0xx
 	else
 	{
 		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_SPI2);
 	}
-
+#endif
 	LL_SPI_SetTransferDirection(SPIx, pConfig->TransferDirection);
 	LL_SPI_SetClockPolarity(SPIx, pConfig->ClockPolarity);
 	LL_SPI_SetClockPhase(SPIx, pConfig->ClockPhase);

@@ -116,10 +116,12 @@ inline GPIO_Port EXTIR::CheckPort(GPIO_TypeDef *GPIOx)
 	{
 		ret = PORTC;
 	}
+#ifdef STM32G0xx
 	else if(GPIOx == GPIOD)
 	{
 		ret = PORTD;
 	}
+#endif
 	else if(GPIOx == GPIOF)
 	{
 		ret = PORTF;

@@ -12,33 +12,33 @@ DMA::DMA(DMA_TypeDef *DMAport) :DMAx(DMAport)
 	;
 }
 
-void DMA::Config(uint32_t Request,uint32_t Channel)
+void DMA::Config(DMA_InitTypdef *pConfig,uint32_t Channel)
 {
-	if(LL_AHB1_GRP1_IsEnabledClock(LL_AHB1_GRP1_PERIPH_DMA1) == 0)
+	if(LL_AHB1_GRP1_IsEnabledClock(LL_AHB1_GRP1_PERIPH_DMA1) == 0)		//DMA1しかない
 	{
 		LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
 	}
-	LL_DMA_SetPeriphRequest(DMAx, Channel, Request);	//DMAMUX,REQID
-	LL_DMA_SetDataTransferDirection(DMAx, Channel, LL_DMA_DIRECTION_MEMORY_TO_PERIPH);
+	LL_DMA_SetPeriphRequest(DMAx, Channel, pConfig->RequestID);	//DMAMUX,REQID
+	LL_DMA_SetDataTransferDirection(DMAx, Channel, pConfig->Direction);
 	LL_DMA_SetChannelPriorityLevel(DMAx, Channel, LL_DMA_PRIORITY_HIGH);
-	LL_DMA_SetMode(DMAx, Channel, LL_DMA_MODE_NORMAL);			//Normal or Circular
+	LL_DMA_SetMode(DMAx, Channel, pConfig->TransferMode);			//Normal or Circular
 
-	LL_DMA_SetPeriphIncMode(DMAx, Channel, LL_DMA_PERIPH_NOINCREMENT);
-	LL_DMA_SetMemoryIncMode(DMAx, Channel, LL_DMA_MEMORY_INCREMENT);
+	LL_DMA_SetPeriphIncMode(DMAx, Channel, pConfig->PeriphInc);
+	LL_DMA_SetMemoryIncMode(DMAx, Channel, pConfig->MemoryInc);
 
-	LL_DMA_SetPeriphSize(DMAx, Channel, LL_DMA_PDATAALIGN_WORD);
-	LL_DMA_SetMemorySize(DMAx, Channel, LL_DMA_MDATAALIGN_BYTE);
+	LL_DMA_SetPeriphSize(DMAx, Channel, pConfig->PeriphSize);
+	LL_DMA_SetMemorySize(DMAx, Channel, pConfig->MemorySize);
 }
 
 void DMA::SetISR(uint32_t Channel)
 {
 	LL_DMA_DisableChannel(DMAx, Channel);
 	LL_DMA_EnableIT_TE(DMAx, Channel);
-	LL_DMA_DisableIT_TC(DMAx, Channel);
+	LL_DMA_EnableIT_TC(DMAx, Channel);
 	LL_DMA_DisableIT_HT(DMAx, Channel);
 }
 
-uint32_t DMA::AddressSet(uint32_t Channel,uint8_t *MemoryAddress,uint32_t *PeriphAddress)
+uint32_t DMA::AddressSet(uint32_t Channel,uint32_t *MemoryAddress,uint32_t *PeriphAddress)
 {
 	if(MemoryAddress == nullptr || PeriphAddress == nullptr)
 	{
@@ -87,8 +87,8 @@ void DMA::StartDMA(uint32_t Channel,uint32_t length)
 
 uint32_t DMA::StopDMAisChannel1(void)
 {
-	while(LL_DMA_IsActiveFlag_TC1(DMAx) == 0);
-	LL_DMA_ClearFlag_TC1(DMAx);
+//	while(LL_DMA_IsActiveFlag_TC1(DMAx) == 0);
+//	LL_DMA_ClearFlag_TC1(DMAx);
 	LL_DMA_DisableChannel(DMAx, LL_DMA_CHANNEL_1);
 
 	return LL_DMA_IsActiveFlag_TE1(DMAx);
@@ -104,6 +104,23 @@ uint32_t DMA::StopDMAisChannel2(void)
 }
 
 #if 0
+void DMA::Config(uint32_t Request,uint32_t Channel)
+{
+	if(LL_AHB1_GRP1_IsEnabledClock(LL_AHB1_GRP1_PERIPH_DMA1) == 0)		//DMA1しかない
+	{
+		LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
+	}
+	LL_DMA_SetPeriphRequest(DMAx, Channel, Request);	//DMAMUX,REQID
+	LL_DMA_SetDataTransferDirection(DMAx, Channel, LL_DMA_DIRECTION_MEMORY_TO_PERIPH);
+	LL_DMA_SetChannelPriorityLevel(DMAx, Channel, LL_DMA_PRIORITY_HIGH);
+	LL_DMA_SetMode(DMAx, Channel, LL_DMA_MODE_NORMAL);			//Normal or Circular
+
+	LL_DMA_SetPeriphIncMode(DMAx, Channel, LL_DMA_PERIPH_NOINCREMENT);
+	LL_DMA_SetMemoryIncMode(DMAx, Channel, LL_DMA_MEMORY_INCREMENT);
+
+	LL_DMA_SetPeriphSize(DMAx, Channel, LL_DMA_PDATAALIGN_WORD);
+	LL_DMA_SetMemorySize(DMAx, Channel, LL_DMA_MDATAALIGN_BYTE);
+}
 //タイマー設定も行っていたもの。tim.cppに分離
 uint32_t DMA::TIMtoDMA(TIM_TypeDef *TIMx,uint32_t PWMchannel,uint8_t *MemoryAddress)
 {

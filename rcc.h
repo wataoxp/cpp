@@ -16,6 +16,7 @@ typedef struct{
 	uint32_t PLLM;			//RCC->PLLCFGR,PLL,InputClockRatio
 	uint32_t PLLN;			//RCC->PLLCFGR,ClockMultiplication
 	uint32_t PLLR;			//RCC->PLLCFGR,PLL,OutputClockRatio
+	uint32_t HSIdiv;
 	uint32_t AHBdiv;
 	uint32_t APBdiv;
 	uint32_t SysClkSrc;
@@ -23,6 +24,7 @@ typedef struct{
 }RCC_InitTypedef;
 
 void RCC_InitG0(RCC_InitTypedef *rcc);
+void RCC_InitC0(RCC_InitTypedef *rcc);
 uint32_t SysTick_Init(uint32_t Ticks);
 
 /*

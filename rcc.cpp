@@ -8,6 +8,7 @@
 
 static uint32_t HCLK;
 
+#ifdef STM32G0xx
 void RCC_InitG0(RCC_InitTypedef *rcc)
 {
 	LL_FLASH_SetLatency(rcc->Latency);
@@ -28,16 +29,39 @@ void RCC_InitG0(RCC_InitTypedef *rcc)
 
 	LL_RCC_SetAPB1Prescaler(rcc->APBdiv);
 
+	//LL_SetSystemCoreClock(rcc->clock);
+	HCLK = rcc->clock;
+}
+#else
+void RCC_InitC0(RCC_InitTypedef *rcc)
+{
+	LL_FLASH_SetLatency(rcc->Latency);
+	while(LL_FLASH_GetLatency() != rcc->Latency);
+
+	LL_RCC_HSI_Enable();
+	while(LL_RCC_HSI_IsReady() != 1);
+
+	//ここの値でクロックの精度が変わる。デフォは64
+	LL_RCC_HSI_SetCalibTrimming(64);
+	LL_RCC_SetHSIDiv(rcc->HSIdiv);
+	LL_RCC_SetAHBPrescaler(rcc->AHBdiv);
+
+	LL_RCC_SetSysClkSource(rcc->SysClkSrc);
+	while(LL_RCC_GetSysClkSource() != rcc->SysClkSrc);
+
+	LL_RCC_SetAPB1Prescaler(rcc->APBdiv);
+
 	LL_SetSystemCoreClock(rcc->clock);
 	HCLK = rcc->clock;
 }
+#endif
 uint32_t SysTick_Init(uint32_t Ticks)
 {
 	if(HCLK == 0)
 	{
 		return 1;
 	}
-	SysTick->LOAD = (uint32_t)(HCLK/Ticks);
+	SysTick->LOAD = (uint32_t)((HCLK/Ticks)-1);
 	SysTick->VAL = 0;
 	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
 

@@ -61,10 +61,12 @@ uint32_t GPIO::GetPortNumber(GPIO_TypeDef *GPIOx)
 	{
 		Ret = 1 << PORTC;
 	}
+#ifdef STM32G0xx
 	else if(GPIOx == GPIOD)
 	{
 		Ret = 1 << PORTD;
 	}
+#endif
 	else if(GPIOx == GPIOF)
 	{
 		Ret = 1 << PORTF;
