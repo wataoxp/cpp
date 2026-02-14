@@ -14,7 +14,6 @@ void Delay(uint32_t nTime)
 
 	while(mDelay)
 	{
-
 		if (LL_SYSTICK_IsActiveCounterFlag() != 0)
 		{
 			mDelay--;

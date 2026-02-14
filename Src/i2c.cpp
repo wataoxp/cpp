@@ -10,9 +10,6 @@
 
 #define I2C_BUFFER_SIZE I2C_BUFFER_HALF
 
-constexpr uint8_t DirectionWrite = 0;
-constexpr uint8_t DirectionRead = 1;
-
 using namespace Wires;
 
 I2C::I2C(I2C_TypeDef *I2CPORT) :I2Cx(I2CPORT)
@@ -30,14 +27,14 @@ inline uint8_t I2C::GetMemAddHighByte(uint16_t address)
 
 void I2C::ConfigMaster(void)
 {
-	uint32_t Timing = I2C_CLOCK_400;
+	uint32_t Timing = I2C_CLOCK_400;		// 2026/02/10 16MHz用に編集
 	uint32_t Periphs;
 
 	if(I2Cx == I2C1)
 	{
 		Periphs = LL_APB1_GRP1_PERIPH_I2C1;
 	}
-#ifdef STM32G0xx
+#ifdef STM32G0
 	else
 	{
 		Periphs = LL_APB1_GRP1_PERIPH_I2C2;
@@ -55,28 +52,38 @@ void I2C::ConfigMaster(void)
 	LL_I2C_Enable(I2Cx);
 }
 /* I2C Function */
-uint32_t I2C::IsActiveDevice(uint8_t addr,uint32_t TimeOut)
+bool I2C::IsActiveDevice(uint8_t addr,uint32_t TimeOut)
 {
 	uint32_t nTime = TimeOut;
-	uint32_t Result = Success;
+	uint32_t tmp = 0;
+	bool Result;
 
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
 	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
 	LL_I2C_TransmitData8(I2Cx, 0);
-	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0)
+
+	tmp = LL_I2C_IsActiveFlag_TXE(I2Cx);
+
+	while((nTime != 0) && (tmp != 1))
 	{
 		if(LL_SYSTICK_IsActiveCounterFlag() != 0)
 		{
 			nTime--;
-			if(nTime == 0)
-			{
-				Result = Failed;
-				break;
-			}
 		}
+		tmp = LL_I2C_IsActiveFlag_TXE(I2Cx);
 	}
+
+	if(tmp != 1)
+	{
+		Result = false;
+	}
+	else
+	{
+		Result = true;
+	}
+
 	return Result;
 }
 
@@ -95,6 +102,8 @@ uint32_t I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
 
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
 	return Success;
 }
@@ -125,6 +134,8 @@ uint32_t I2C::MemWrite(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *TxBu
 
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
 	return Success;
 }
@@ -158,6 +169,8 @@ uint32_t I2C::MemRead(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *RxBuf
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+
 	return Success;
 }
 
@@ -175,6 +188,8 @@ uint32_t I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
 
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
 	return Success;
 }
@@ -234,18 +249,32 @@ void I2C::Write(uint8_t addr,uint8_t Reg,uint8_t Data)
 	LL_I2C_ClearFlag_STOP(I2Cx);
 }
 
-//時間計測
-//uint32_t I2C::WaitBusyFlag(void)
-//{
-//
-//}
-//uint32_t I2C::WaitTxFlag(void);
-//uint32_t I2C::WaitRxFlag(void);
-//uint32_t I2C::WaitStopFlag(void);
-//uint32_t I2C::WaitCompleteFlag(void);
-
 #if 0
 uint32_t I2C::WirePinConfig(WirePinStruct *obj)
+uint32_t I2C::IsActiveDevice(uint8_t addr,uint32_t TimeOut,uDelay delay)
+{
+	uint32_t nTime = TimeOut;
+	uint32_t Result = Success;
+
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+
+	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+
+	LL_I2C_TransmitData8(I2Cx, 0);
+	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0)
+	{
+		if(LL_SYSTICK_IsActiveCounterFlag() != 0)		// SysTickDelay
+		{
+			nTime--;
+			if(nTime == 0)
+			{
+				Result = Failed;
+				break;
+			}
+		}
+	}
+	return Result;
+}
 {
 	uint32_t ret = 0;
 	GPIO SCL(obj->PortSCL,obj->PinSCL);

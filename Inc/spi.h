@@ -10,21 +10,6 @@
 
 #include "periph.h"
 
-#define NSS_AUTO_CONTROL 0
-#define NSS_SOFT_CONTROL SPI_CR1_SSM
-#define SSOE_OUTPUT_ENABLE SPI_CR2_SSOE
-#define SSOE_OUTPUT_DISABLE 0
-#define MSTR_MASTER SPI_CR1_MSTR
-#define MSTR_SLAVE 0
-
-namespace Serials{
-	typedef enum{
-		Succses,
-		Leak,
-		ConfigError,
-	}SPIStatus;
-}
-
 typedef struct{
 	/* CR1 */
 	uint32_t TransferDirection;		//3線or4線(BIDIMODE)3線の場合は送信or受信専用の設定(BIDIOE)
@@ -55,57 +40,75 @@ typedef struct{
  *  マルチマスタ、またはスレーブ→NSS=0、SSOE=0
  *********************/
 
-typedef struct{
-	GPIO_TypeDef *PortSCK;
-	GPIO_TypeDef *PortMOSI;
-	GPIO_TypeDef *PortNSS;
-	GPIO_TypeDef *PortMISO;
-	uint32_t PinSCK;
-	uint32_t PinMOSI;
-	uint32_t PinNSS;
-	uint32_t PinMISO;
-}SerialPinStruct;
 
 class SPI{
 private:
 	SPI_TypeDef *SPIx;
+	GPIO_TypeDef *NSSport;
+	uint32_t NSSpin;
 public:
 	SPI(SPI_TypeDef *SPIPORT);
 
 	void Config(SPI_InitTypedef *pConfig);
+	void ConfigNSS(GPIO_TypeDef *GPIOx,uint32_t Pin,uint32_t mode);
 
-	void MasterTransmit(uint8_t *data,uint16_t length);
+	/* NSSがハード管理なら逐次管理 */
+	void Enable(void);
+	void Disable(void);
+
+	uint32_t MasterTransmit(uint8_t *data,uint16_t length);
 	void Receive(uint8_t *RXbuf,uint16_t length);
 
+	/* NSS SoftControl */
+	void ChipSelect(void);
+	void ChipDeSelect(void);
+
+	/* Arduino SPI */
 	uint8_t Transfer(uint8_t data);
 	void ClearFIFO(void);
-	inline void begin(void)
-	{
-		LL_SPI_Enable(SPIx);
-		while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-	}
-	inline void end(void)
-	{
-		while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
-		while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
-		LL_SPI_Disable(SPIx);
-	}
-	inline void ChipSelect(GPIO_TypeDef *GPIOx,uint32_t PinPos)
-	{
-		GPIO_CLEAR(GPIOx,PinPos);
-	}
-	inline void ChipDeSelect(GPIO_TypeDef *GPIOx,uint32_t PinPos)
-	{
-		GPIO_WRITE(GPIOx,PinPos);
-	}
+	void begin(void);
+	void end(void);
+
 };
 
-#if 0
-void SetRegister(SPI_InitTypedef *Config);
-void StructInit(SPI_InitTypedef *Config,uint32_t NSS);
-uint32_t SerialPinConfig(SerialPinStruct *obj,uint32_t SckAf,uint32_t MosiAf);
-uint32_t SetPinNSS(SerialPinStruct *obj,uint32_t NssMode,uint32_t Alternate);
-uint32_t SetPinMISO(SerialPinStruct *obj,uint32_t Alternate);
-#endif
+inline void SPI::ConfigNSS(GPIO_TypeDef *GPIOx,uint32_t Pin,uint32_t mode)
+{
+	NSSport = GPIOx;
+	NSSpin = Pin;
+	LL_SPI_SetNSSMode(SPIx, mode);
+}
+
+inline void SPI::Enable(void)
+{
+	LL_SPI_Enable(SPIx);
+}
+
+inline void SPI::Disable(void)
+{
+	LL_SPI_Disable(SPIx);
+}
+
+inline void SPI::ChipSelect(void)
+{
+	GPIO_CLEAR(NSSport,NSSpin);
+}
+inline void SPI::ChipDeSelect(void)
+{
+	GPIO_WRITE(NSSport,NSSpin);
+}
+
+inline void SPI::begin(void)
+{
+	LL_SPI_Enable(SPIx);
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+}
+inline void SPI::end(void)
+{
+	while(LL_SPI_IsActiveFlag_BSY(SPIx) != 0);
+	while(LL_SPI_GetTxFIFOLevel(SPIx) != 0);
+	LL_SPI_Disable(SPIx);
+}
+
+
 
 #endif /* INC_SPI_H_ */

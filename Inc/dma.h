@@ -31,6 +31,7 @@ public:
 	uint32_t AddressSetM2M(uint32_t Channel,uint8_t *SrcAddress,uint8_t *DstAddress);
 	void SPItoDMA(SPI_TypeDef *SPIx,uint8_t *MemoryAddress);
 	void StartDMA(uint32_t Channel,uint32_t length);
+	uint32_t StopDMA(uint32_t Channel);
 	uint32_t StopDMAisChannel1(void);
 	uint32_t StopDMAisChannel2(void);
 

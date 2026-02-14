@@ -10,7 +10,7 @@
 
 #include "periph.h"
 
-#define SYSTEM_CLOCK 48000000		//HCLK
+#define SYSTEM_CLOCK 64000000		//HCLK
 #define MICRO_SECOND 1000000		//1s = 1000000us
 #define MILL_SECOND 1000			//1s = 1000ms
 #define MICRO_LOAD (SYSTEM_CLOCK/MICRO_SECOND)	// HCLK/MICRO_SECOND = 1usでカウントされる値
@@ -29,10 +29,16 @@ static inline void DeInit1usTick(void)
 	SysTick->LOAD  = (uint32_t)(MILL_LOAD - 1UL);
 }
 
-static inline void SysTick_ConfigISR(uint8_t valid)
+static inline void SysTickConfigISR(bool valid)
 {
-	SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-	SysTick->CTRL |= valid;
+	if(valid)
+	{
+		LL_SYSTICK_EnableIT();
+	}
+	else
+	{
+		LL_SYSTICK_DisableIT();
+	}
 }
 
 

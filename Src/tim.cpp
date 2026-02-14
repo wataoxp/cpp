@@ -6,7 +6,7 @@
  */
 #include "tim.h"
 
-using namespace TimerCodes;
+using namespace TimerPeripheral;
 
 TIM::TIM(TIM_TypeDef *TIMPORT) :TIMx(TIMPORT)
 {
@@ -99,6 +99,7 @@ uint32_t TIM::ConfigPWM(uint32_t Channel,uint32_t mode)
 	}
 	return success;
 }
+
 uint32_t TIM::ConfigDMA(uint32_t Channel,uint32_t ReqSource)
 {
 	uint32_t Ret = success;
@@ -133,7 +134,6 @@ uint32_t TIM::ConfigDMA(uint32_t Channel,uint32_t ReqSource)
 	return Ret;
 }
 
-
 uint32_t* TIM::GetCCxRegAddr(uint32_t Channel)
 {
 	uint32_t *CCRxReg = nullptr;								//DMA、ペリフェラルアドレスを返す
@@ -158,11 +158,14 @@ uint32_t* TIM::GetCCxRegAddr(uint32_t Channel)
 	return CCRxReg;
 }
 
+/***************************************************/
+/* TIM_InputStructを使用した形に書き換えてテストしてくれ   */
+
 uint32_t TIM::ConfigInput(uint32_t Channel,uint32_t Polarity)
 {
 	if(Channel > LL_TIM_CHANNEL_CH6)
 	{
-		return failed;
+		return NotChannel;
 	}
 
 	if(LL_TIM_CC_IsEnabledChannel(TIMx, Channel) != 0)
@@ -195,7 +198,7 @@ void TIM::ConfigCombinedCh(uint32_t ch1Pol,uint32_t ch2Pol)
 	//Rising Edge CCR
 	LL_TIM_IC_SetActiveInput(TIMx, LL_TIM_CHANNEL_CH1, LL_TIM_ACTIVEINPUT_DIRECTTI);	//CC1SをTI1に配置
 	LL_TIM_IC_SetPrescaler(TIMx, LL_TIM_CHANNEL_CH1, LL_TIM_ICPSC_DIV1);				//入力プリスケーラ
-	LL_TIM_IC_SetFilter(TIMx, LL_TIM_CHANNEL_CH1, LL_TIM_IC_FILTER_FDIV1_N8);			//フィルター無し
+	LL_TIM_IC_SetFilter(TIMx, LL_TIM_CHANNEL_CH1, LL_TIM_IC_FILTER_FDIV1_N8);			//8回フィルタ
 	LL_TIM_IC_SetPolarity(TIMx, LL_TIM_CHANNEL_CH1, ch1Pol);							//極性の選択
 
 	//Falling Edge CCR
@@ -212,80 +215,60 @@ void TIM::ConfigCombinedCh(uint32_t ch1Pol,uint32_t ch2Pol)
 	LL_TIM_CC_EnableChannel(TIMx, LL_TIM_CHANNEL_CH2);
 }
 
+uint32_t TIM::ConfigEncoderMode(TIM_InputStruct *Ti1,TIM_InputStruct *Ti2,uint32_t Mode)
+{
+	if((Ti1->Channel > LL_TIM_CHANNEL_CH6) || (Ti2->Channel > LL_TIM_CHANNEL_CH6))
+	{
+		return NotChannel;
+	}
 
-/****** GPIO設定も担当していた頃のやつ *****/
-/***
- * オルタネートは各機能毎にある程度統一されている。
- * ハードウェア側データシート(G031ではP40）を参照してほしいが、タイマーの場合はAF1またはAF2になる。
- * なおI2CがすべてAF6である。
- ***/
+	// 有効であるなら無効にする
+	if(LL_TIM_CC_IsEnabledChannel(TIMx, Ti1->Channel) != 0)
+	{
+		DisablePulse(Ti1->Channel);
+	}
+	if(LL_TIM_CC_IsEnabledChannel(TIMx, Ti2->Channel) != 0)
+	{
+		DisablePulse(Ti2->Channel);
+	}
+
+	// TI1の設定
+	LL_TIM_IC_SetActiveInput(TIMx, Ti1->Channel, Ti1->CCxS);
+	LL_TIM_IC_SetPrescaler(TIMx, Ti1->Channel, Ti1->Prescale);
+	LL_TIM_IC_SetFilter(TIMx, Ti1->Channel, Ti1->Filter);
+	LL_TIM_IC_SetPolarity(TIMx, Ti1->Channel, Ti1->Polarity);
+
+	// TI2の設定
+	LL_TIM_IC_SetActiveInput(TIMx, Ti2->Channel, Ti2->CCxS);
+	LL_TIM_IC_SetPrescaler(TIMx, Ti2->Channel, Ti2->Prescale);
+	LL_TIM_IC_SetFilter(TIMx, Ti2->Channel, Ti2->Filter);
+	LL_TIM_IC_SetPolarity(TIMx, Ti2->Channel, Ti2->Polarity);
+
+	LL_TIM_SetEncoderMode(TIMx, Mode);
+
+	EnablePulse(Ti1->Channel);
+	EnablePulse(Ti2->Channel);
+
+	return success;
+}
+
+void TIM::Delay(uint32_t nTime)
+{
+	__IO uint32_t mDelay = nTime;
+	LL_TIM_ClearFlag_UPDATE(TIMx);
+	LL_TIM_SetCounter(TIMx, 0);
+
+	while(mDelay)
+	{
+		if(LL_TIM_IsActiveFlag_UPDATE(TIMx) != 0)
+		{
+			LL_TIM_ClearFlag_UPDATE(TIMx);
+			mDelay--;
+		}
+	}
+}
+
 #if 0
-inline void TIM::TIM2outputPin(uint32_t Channel)
-{
-	GPIO_TypeDef *GPIOx = GPIOA;
-	uint32_t PinPos;
-	uint32_t Alternate = LL_GPIO_AF_2;
-
-	switch(Channel)
-	{
-	case LL_TIM_CHANNEL_CH1:
-		PinPos = Pin0;
-		break;
-	case LL_TIM_CHANNEL_CH2:
-		PinPos = Pin1;
-		break;
-	case LL_TIM_CHANNEL_CH3:
-		PinPos = Pin2;
-		break;
-	case LL_TIM_CHANNEL_CH4:
-		PinPos = Pin3;
-		break;
-	}
-//	PulsePinConfig(GPIOx, PinPos, Alternate);
-}
-
-void TIM::PulsePinConfig(GPIO_TypeDef *GPIOx,uint32_t PinPos,uint32_t Alternate)
-{
-	GPIO Pulse(GPIOx,PinPos);
-
-	Pulse.Begin();
-	Pulse.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
-	Pulse.AlternateInit(Alternate);
-}
-uint32_t TIM::TimerConfig(uint32_t Presclaer,uint32_t Reload)
-{
-	if(CheckTimerPeriph() != 0)
-	{
-		return 1;
-	}
-
-	if(IS_TIM_CLOCK_DIVISION_INSTANCE(TIMx))
-	{
-		LL_TIM_SetClockDivision(TIMx, LL_TIM_CLOCKDIVISION_DIV1);
-	}
-
-	LL_TIM_SetClockSource(TIMx, LL_TIM_CLOCKSOURCE_INTERNAL);
-	LL_TIM_SetPrescaler(TIMx, (Presclaer-1));
-	LL_TIM_SetAutoReload(TIMx, (Reload-1));
-
-	if(IS_TIM_COUNTER_MODE_SELECT_INSTANCE(TIMx))
-	{
-		LL_TIM_SetCounterMode(TIMx, LL_TIM_COUNTERMODE_UP);
-	}
-
-	LL_TIM_GenerateEvent_UPDATE(TIMx);			//更新イベントを発生させておく
-
-	LL_TIM_ClearFlag_UPDATE(TIMx);				//更新イベントフラグをクリア
-	LL_TIM_EnableARRPreload(TIMx);
-
-	CLEAR_REG(TIMx->CCER);
-	CLEAR_REG(TIMx->CR2);
-	CLEAR_REG(TIMx->CCMR1);
-	CLEAR_REG(TIMx->CCMR2);
-
-	return 0;
-}
-
 //特に問題はないけどLLライブラリを積極活用する方針に沿って一時休眠
 uint32_t TIM::PWMConfig(uint32_t Channel,uint32_t mode)
 {

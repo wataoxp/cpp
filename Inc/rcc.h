@@ -10,6 +10,13 @@
 
 #include "periph.h"
 
+enum class rccStatus :uint32_t{
+	InternalClock,
+	ExternalClock,
+	EnablePLL,
+	DisablePLL,
+};
+
 typedef struct{
 	uint32_t Latency;		//FLASH->ACR,FlashAccessWait
 	uint32_t PLLSrc;
@@ -23,9 +30,10 @@ typedef struct{
 	uint32_t clock;
 }RCC_InitTypedef;
 
-void RCC_InitG0(RCC_InitTypedef *rcc);
+void ConfigPLL(RCC_InitTypedef *rcc);
+void ConfigHighClock(RCC_InitTypedef *rcc,rccStatus src);
 void RCC_InitC0(RCC_InitTypedef *rcc);
-uint32_t SysTick_Init(uint32_t Ticks);
+uint32_t SysTickInit(uint32_t Ticks);
 
 /*
  * RCC_APBENR1レジスタについて

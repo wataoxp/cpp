@@ -85,6 +85,27 @@ void DMA::StartDMA(uint32_t Channel,uint32_t length)
 	LL_DMA_EnableChannel(DMAx, Channel);
 }
 
+uint32_t DMA::StopDMA(uint32_t Channel)
+{
+	uint32_t ret = 0;
+
+	switch(Channel)
+	{
+	case LL_DMA_CHANNEL_1:
+		ret = LL_DMA_IsActiveFlag_TE1(DMAx);
+		break;
+	case LL_DMA_CHANNEL_2:
+		ret = LL_DMA_IsActiveFlag_TE2(DMAx);
+		break;
+	default:
+		return 2;
+		break;
+	}
+	LL_DMA_DisableChannel(DMAx, Channel);
+
+	return ret;
+}
+
 uint32_t DMA::StopDMAisChannel1(void)
 {
 //	while(LL_DMA_IsActiveFlag_TC1(DMAx) == 0);
@@ -96,8 +117,8 @@ uint32_t DMA::StopDMAisChannel1(void)
 
 uint32_t DMA::StopDMAisChannel2(void)
 {
-	while(LL_DMA_IsActiveFlag_TC2(DMAx) == 0);
-	LL_DMA_ClearFlag_TC2(DMAx);
+//	while(LL_DMA_IsActiveFlag_TC2(DMAx) == 0);
+//	LL_DMA_ClearFlag_TC2(DMAx);
 	LL_DMA_DisableChannel(DMAx, LL_DMA_CHANNEL_2);
 
 	return LL_DMA_IsActiveFlag_TE2(DMAx);
