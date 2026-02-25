@@ -25,9 +25,16 @@ inline void UART::CR1Config(UART_InitTypedef *init)
 
 void UART::Config(UART_InitTypedef *init,uint32_t SysClk)
 {
-	LL_RCC_SetUSARTClockSource(LL_RCC_USART1_CLKSOURCE_PCLK1);
-
-	LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_USART1);
+	if(USARTx == USART1)
+	{
+		LL_RCC_SetUSARTClockSource(LL_RCC_USART1_CLKSOURCE_PCLK1);
+		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_USART1);
+	}
+	else if(USARTx == USART2)
+	{
+		// G030ではUSART2のクロックソースは選択不可(PCLKのみ)
+		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USART2);
+	}
 
 	LL_USART_Disable(USARTx);
 
@@ -36,6 +43,7 @@ void UART::Config(UART_InitTypedef *init,uint32_t SysClk)
 	LL_USART_SetStopBitsLength(USARTx, init->StopBits);
 	LL_USART_SetHWFlowCtrl(USARTx, init->HardWareControl);
 
+	// 直接クロック値を渡す
 //	uint32_t clk = LL_RCC_GetUSARTClockFreq(LL_RCC_USART1_CLKSOURCE);
 	uint32_t clk = SysClk;
 
@@ -94,38 +102,3 @@ void UART::TransmitData(uint8_t *buf,uint8_t size)
 	LL_USART_ClearFlag_TC(USARTx);
 	while(LL_USART_IsActiveFlag_TC(USARTx) == 0);
 }
-
-#if 0
-void UART::Config(UART_InitTypedef *init)
-{
-	LL_RCC_SetUSARTClockSource(LL_RCC_USART1_CLKSOURCE_PCLK1);
-
-	LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_USART1);
-
-	LL_USART_Disable(USARTx);
-
-	CR1Config(init);
-
-	LL_USART_SetStopBitsLength(USARTx, LL_USART_STOPBITS_1);
-	LL_USART_SetHWFlowCtrl(USARTx, LL_USART_HWCONTROL_NONE);
-
-	uint32_t clk = LL_RCC_GetUSARTClockFreq(LL_RCC_USART1_CLKSOURCE);
-
-	if(clk != 0)
-	{
-		LL_USART_SetBaudRate(USARTx, clk, LL_USART_PRESCALER_DIV1,
-				LL_USART_OVERSAMPLING_16, 115200);
-	}
-
-	LL_USART_SetPrescaler(USARTx, LL_USART_PRESCALER_DIV1);
-
-	LL_USART_SetTXFIFOThreshold(USARTx, LL_USART_FIFOTHRESHOLD_1_8);
-	LL_USART_SetRXFIFOThreshold(USARTx, LL_USART_FIFOTHRESHOLD_1_8);
-	LL_USART_DisableFIFO(USARTx);
-	LL_USART_ConfigAsyncMode(USARTx);
-
-	LL_USART_Enable(USARTx);
-
-	while((!(LL_USART_IsActiveFlag_TEACK(USARTx))) || (!(LL_USART_IsActiveFlag_REACK(USARTx))));
-}
-#endif

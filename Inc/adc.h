@@ -10,54 +10,73 @@
 
 #include "periph.h"
 
-typedef void (*uDelay)(uint32_t);
+namespace ADC_Parameter{
+	typedef enum{
+		SoftTrigger,
+		ExTrigger,
+	}StatusADC;
 
-typedef struct{
-	/* CFGR1 */
-	uint32_t Resolution; 		//RES
-	uint32_t DataAlignment;		//ALGIN
+	typedef struct{
+		/* CFGR1 */
+		uint32_t Resolution; 		//RES
+		uint32_t DataAlignment;		//ALGIN
 
-	uint32_t TriggerSource;		//EXTSEL
-	uint32_t TriggerEdge;		//EXTEN
-	uint32_t OverRun;			//OVRMOD
+		uint32_t TriggerSource;		//EXTSEL
+		uint32_t TriggerEdge;		//EXTEN
+		uint32_t OverRun;			//OVRMOD
 
-	uint32_t Configurability;	//CHSELRMOD
+		uint32_t Configurability;	//CHSELRMOD
 
-	/* CFGR2 */
-	uint32_t Clock;				//CKMODE
+		/* CFGR2 */
+		uint32_t Clock;				//CKMODE
 
-	/* SMPR */
-	uint32_t SamplingTime;
+		/* SMPR */
+		uint32_t SamplingTime1;		//SMP1
+		uint32_t SamplingTime2;		//SMP2
 
-	/* CHSELR */
-	uint32_t SequencerLength;
-}ADC_ConfigTypedef;
+		/* CHSELR */
+		uint32_t SequencerLength;
+
+
+		/* Other */
+		StatusADC ExternalTrigger;
+	}ADC_ConfigTypedef;
+}
+
+
 
 class AnalogConverter{
 private:
 	ADC_TypeDef *ADCx;
+	uint32_t RegConfig(ADC_Parameter::ADC_ConfigTypedef *RegConfig,uint32_t Channel);
+	void SingleMode(uint32_t Channel);
+	uint32_t SequenceMode(uint32_t Channel,uint32_t length);
 public:
 	AnalogConverter(ADC_TypeDef *ADCPort);
-
-	uint32_t Config(ADC_ConfigTypedef* Config,uDelay delay);
-	uint32_t RegConfig(ADC_ConfigTypedef *RegConfig,uint32_t Channel);
-	uint32_t SelectChannel(ADC_ConfigTypedef *Config,uint32_t Channel);
-	void SetISR(void);
+	uint32_t Config(ADC_Parameter::ADC_ConfigTypedef* Config,uint32_t Channel,CoreClock SysClock);
 
 	uint16_t StartSoftConvert(void);
-	inline void StartHwTrigger(void)
-	{
-		LL_ADC_REG_StartConversion(ADCx);
-	}
-
-	inline void EnableADC(void)
-	{
-		LL_ADC_Enable(ADCx);
-		while(LL_ADC_IsActiveFlag_ADRDY(ADCx) == 0);
-	}
-
 	void DisableADC(void);
+
+	// inline
+	void StartHwTrigger(void);
+	void EnableADC(void);
+	void SetISR(void);
 };
+
+inline void AnalogConverter::StartHwTrigger(void)
+{
+	LL_ADC_REG_StartConversion(ADCx);
+}
+inline void AnalogConverter::EnableADC(void)
+{
+	LL_ADC_Enable(ADCx);
+	while(LL_ADC_IsActiveFlag_ADRDY(ADCx) == 0);
+}
+inline void AnalogConverter::SetISR(void)
+{
+	LL_ADC_EnableIT_EOC(ADCx);
+}
 
 
 

@@ -6,79 +6,107 @@
  */
 
 #include "adc.h"
+#include "delay.h"
+
+using namespace ADC_Parameter;
 
 AnalogConverter::AnalogConverter(ADC_TypeDef *ADCPort) :ADCx(ADCPort)
 {
 	;
 }
 
-uint32_t AnalogConverter::SelectChannel(ADC_ConfigTypedef *Config,uint32_t Channel)
+uint32_t AnalogConverter::Config(ADC_ConfigTypedef* Config,uint32_t Channel,CoreClock Clock)
 {
-	LL_ADC_REG_SetSequencerChAdd(ADCx, Channel);	//シングル変換、またはSCANDIRの順番
+	uint32_t ret = 0;
 
-	if(Config->Configurability != LL_ADC_REG_SEQ_FIXED)
+	if(ADCx == ADC1)
 	{
-		if(Channel > LL_ADC_CHANNEL_14)		//CHSELRMOD=1の最大値
-		{
-			return 1;
-		}
-		LL_ADC_REG_SetSequencerConfigurable(ADCx,LL_ADC_REG_SEQ_CONFIGURABLE);
-		LL_ADC_REG_SetSequencerLength(ADCx,Config->SequencerLength);
+		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_ADC);
 	}
-
-	while(LL_ADC_IsActiveFlag_CCRDY(ADCx) == 0);		//CHSELRMODおよびCHSELRへのアクセス後はCCRDYを待つ
-	LL_ADC_ClearFlag_CCRDY(ADCx);
-
-	return 0;
-}
-
-uint32_t AnalogConverter::Config(ADC_ConfigTypedef* Config,uDelay delay)
-{
-	LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_ADC);
 
 	if(LL_ADC_IsEnabled(ADCx) != 0)
 	{
-		return 1;
+		DisableADC();
 	}
-	CLEAR_REG(ADCx->CR);
+
 	CLEAR_REG(ADCx->CFGR1);
 	CLEAR_REG(ADCx->CFGR2);
 
 	LL_ADC_EnableInternalRegulator(ADCx);
-	delay(200);							//レギュレータの安定化待ち。データシート上では20us。MX_ADC‗Initではだいたいこのくらい
+//	tDelay::SoftMicroDelay(20, Clock);	//レギュレータの安定化待ち。データシート上では20us。s
 
-	LL_ADC_SetResolution(ADCx, Config->Resolution);			//分解能
-	LL_ADC_SetDataAlignment(ADCx, Config->DataAlignment);	//DR、右または左寄せ
+	LL_ADC_SetResolution(ADCx, Config->Resolution);
+	LL_ADC_SetDataAlignment(ADCx, Config->DataAlignment);
 	LL_ADC_SetClock(ADCx, Config->Clock);					//ADCクロック。最大で35MHz
+	LL_ADC_SetTriggerFrequencyMode(ADCx, LL_ADC_CLOCK_FREQ_MODE_HIGH);	// 低周波数モード。無効
 
-	return 0;
+	ret += RegConfig(Config, Channel);
+
+	if(Config->Configurability == LL_ADC_REG_SEQ_FIXED)
+	{
+		SingleMode(Channel);
+	}
+	else
+	{
+		ret += SequenceMode(Channel, Config->SequencerLength);
+	}
+
+	return ret;
 }
 
 uint32_t AnalogConverter::RegConfig(ADC_ConfigTypedef *RegConfig,uint32_t Channel)
 {
 	if(LL_ADC_IsEnabled(ADCx) != 0)
 	{
-		return 1;
+		DisableADC();
 	}
 
-	LL_ADC_REG_SetTriggerSource(ADCx, RegConfig->TriggerSource);			//変換トリガソース
-	LL_ADC_REG_SetTriggerEdge(ADCx,RegConfig->TriggerEdge);					//変換トリガ方向
-	LL_ADC_SetSamplingTimeCommonChannels(ADC1, LL_ADC_SAMPLINGTIME_COMMON_1, RegConfig->SamplingTime);		//サンプリング時間
-	LL_ADC_REG_SetOverrun(ADCx,RegConfig->OverRun);							//オーバーラン時にDRの値を保持or上書き
+	if(RegConfig->ExternalTrigger == ExTrigger)
+	{
+		LL_ADC_REG_SetTriggerSource(ADCx, RegConfig->TriggerSource);			//変換トリガソース
+		LL_ADC_REG_SetTriggerEdge(ADCx,RegConfig->TriggerEdge);					//変換トリガ方向
+	}
+	LL_ADC_SetSamplingTimeCommonChannels(ADCx, LL_ADC_SAMPLINGTIME_COMMON_1, RegConfig->SamplingTime1);
+	LL_ADC_SetSamplingTimeCommonChannels(ADCx, LL_ADC_SAMPLINGTIME_COMMON_2, RegConfig->SamplingTime2);
+	LL_ADC_SetChannelSamplingTime(ADCx, Channel, LL_ADC_SAMPLINGTIME_COMMON_1);	// SMP1or2
+	LL_ADC_REG_SetOverrun(ADCx,RegConfig->OverRun);
 
 	return 0;
 }
 
-void AnalogConverter::SetISR(void)
+void AnalogConverter::SingleMode(uint32_t Channel)
 {
-	LL_ADC_EnableIT_EOC(ADCx);
+	// CHSELMOD=0
+	LL_ADC_REG_SetSequencerConfigurable(ADCx, LL_ADC_REG_SEQ_FIXED);
+	LL_ADC_REG_SetSequencerChAdd(ADCx, Channel);
+
+	while(LL_ADC_IsActiveFlag_CCRDY(ADCx) == 0);		//CHSELRMODおよびCHSELRへのアクセス後はCCRDYを待つ
+	LL_ADC_ClearFlag_CCRDY(ADCx);
+}
+
+uint32_t AnalogConverter::SequenceMode(uint32_t Channel,uint32_t length)
+{
+	// CHSELRMOD=1の最大値
+	if(Channel > LL_ADC_CHANNEL_14)
+	{
+		return 1;
+	}
+	// CHSELMOD=1
+	LL_ADC_REG_SetSequencerConfigurable(ADCx, LL_ADC_REG_SEQ_CONFIGURABLE);
+	LL_ADC_REG_SetSequencerChAdd(ADCx, Channel);
+	LL_ADC_REG_SetSequencerLength(ADCx, length);	// シーケンスの終点
+
+	while(LL_ADC_IsActiveFlag_CCRDY(ADCx) == 0);
+	LL_ADC_ClearFlag_CCRDY(ADCx);
+
+	return 0;
 }
 
 uint16_t AnalogConverter::StartSoftConvert(void)
 {
 	if(LL_ADC_IsEnabled(ADCx) == 0)
 	{
-		this->EnableADC();
+		EnableADC();
 	}
 
 	LL_ADC_REG_StartConversion(ADCx);
@@ -92,13 +120,41 @@ void AnalogConverter::DisableADC(void)
 {
 	while(LL_ADC_IsDisableOngoing(ADCx) != 0);		//ADDISビットが1であるなら待つ
 	LL_ADC_REG_StopConversion(ADCx);
-
 	while(LL_ADC_REG_IsStopConversionOngoing(ADCx) != 0);	//ADSTPビットが0になるまで待つ
 	LL_ADC_Disable(ADCx);
+	while(LL_ADC_IsDisableOngoing(ADCx) != 0);
 }
 
 
 #if 0
+// 分割
+uint32_t AnalogConverter::SelectChannel(ADC_ConfigTypedef *Config,uint32_t Channel)
+{
+	// 変換モードを選択
+	LL_ADC_REG_SetSequencerConfigurable(ADCx,Config->Configurability);
+
+	// シーケンス変換モード
+	if(Config->Configurability == LL_ADC_REG_SEQ_CONFIGURABLE)
+	{
+		if(Channel > LL_ADC_CHANNEL_14)		//CHSELRMOD=1の最大値
+		{
+			return 1;
+		}
+
+		LL_ADC_REG_SetSequencerLength(ADCx,Config->SequencerLength);
+
+	}
+	else	//シングル変換モード
+	{
+		LL_ADC_REG_SetSequencerChAdd(ADCx, Channel);
+
+	}
+
+	while(LL_ADC_IsActiveFlag_CCRDY(ADCx) == 0);		//CHSELRMODおよびCHSELRへのアクセス後はCCRDYを待つ
+	LL_ADC_ClearFlag_CCRDY(ADCx);
+
+	return 0;
+}
 //TRGOがうまくいかなかったやつ
 uint32_t AnalogConverter::Config(ADC_ConfigTypedef *Config)
 {

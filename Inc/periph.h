@@ -70,6 +70,11 @@
 #endif
 
 typedef enum{
+	HSICLOCK = 16,
+	PLLCLOCK = 64,
+}CoreClock;
+
+typedef enum{
 	Pin0,
 	Pin1,
 	Pin2,
@@ -105,6 +110,6 @@ typedef enum{
 
 #define GPIO_WRITE(GPIOx,Pin) (GPIOx->BSRR = 1 << Pin)
 #define GPIO_CLEAR(GPIOx,Pin) (GPIOx->BRR = 1 << Pin)
-#define GPIO_READ(GPIOx,Pin) ((GPIOx->IDR & 1 << Pin) >> Pin)
+#define GPIO_READ(GPIOx,Pin) (GPIOx->IDR & 1 << Pin)
 
 #endif /* SRC_PERIPH_H_ */

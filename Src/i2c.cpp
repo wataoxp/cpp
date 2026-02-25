@@ -6,9 +6,8 @@
  */
 
 #include "i2c.h"
+#include "delay.h"
 #include <string.h>
-
-#define I2C_BUFFER_SIZE I2C_BUFFER_HALF
 
 using namespace Wires;
 
@@ -25,21 +24,50 @@ inline uint8_t I2C::GetMemAddHighByte(uint16_t address)
 	return (uint8_t)(address >> 8);
 }
 
-void I2C::ConfigMaster(void)
+inline uint32_t I2C::GetWireBus(void)
 {
-	uint32_t Timing = I2C_CLOCK_400;		// 2026/02/10 16MHz用に編集
-	uint32_t Periphs;
+	uint32_t Periphs = 0;
 
 	if(I2Cx == I2C1)
 	{
 		Periphs = LL_APB1_GRP1_PERIPH_I2C1;
 	}
-#ifdef STM32G0
-	else
+#ifdef I2C2
+	else if(I2Cx == I2C2)
 	{
 		Periphs = LL_APB1_GRP1_PERIPH_I2C2;
 	}
 #endif
+#ifdef I2C3
+	else if(I2Cx == I2C3)
+	{
+		Periphs = LL_APB1_GRP1_PERIPH_I2C2;
+	}
+#endif
+	else
+	{
+		Periphs = Failed;
+	}
+
+	return Periphs;
+}
+
+/* Config */
+
+uint32_t I2C::ConfigMaster(CoreClock clock)
+{
+	uint32_t Periphs;
+	uint32_t Timing;
+
+	Periphs = GetWireBus();
+
+	if(Periphs == Failed)
+	{
+		return Failed;
+	}
+
+	Timing = (clock == PLLCLOCK)? SCL64MHz:SCL16MHz;
+
 	LL_APB1_GRP1_EnableClock(Periphs);
 
 	LL_I2C_Disable(I2Cx);
@@ -50,44 +78,68 @@ void I2C::ConfigMaster(void)
 	LL_I2C_EnableClockStretching(I2Cx);
 
 	LL_I2C_Enable(I2Cx);
+
+	return success;
 }
-/* I2C Function */
-bool I2C::IsActiveDevice(uint8_t addr,uint32_t TimeOut)
+
+template <typename wait>
+bool I2C::IsActiveDevice(uint8_t addr)
 {
-	uint32_t nTime = TimeOut;
-	uint32_t tmp = 0;
-	bool Result;
+	bool Result = false;
+	uint32_t tmp = 0,count = 0;
 
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
-
-	LL_I2C_TransmitData8(I2Cx, 0);
-
-	tmp = LL_I2C_IsActiveFlag_TXE(I2Cx);
-
-	while((nTime != 0) && (tmp != 1))
+	do
 	{
-		if(LL_SYSTICK_IsActiveCounterFlag() != 0)
-		{
-			nTime--;
-		}
-		tmp = LL_I2C_IsActiveFlag_TXE(I2Cx);
-	}
+		while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+		LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
-	if(tmp != 1)
-	{
-		Result = false;
-	}
-	else
-	{
-		Result = true;
-	}
+		LL_I2C_TransmitData8(I2Cx, 0);
+
+		wait::mDelay(5);		// 送信完了を疑似的に待つ
+		tmp = LL_I2C_IsActiveFlag_NACK(I2Cx);	// NACKを受信したなら継続
+		LL_I2C_ClearFlag_NACK(I2Cx);
+
+		while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+		LL_I2C_ClearFlag_STOP(I2Cx);
+
+		count++;
+	}while((tmp) && (count < Wires::IsActiveMaxLoop));
+
+	if(count < Wires::IsActiveMaxLoop) Result = true;
 
 	return Result;
 }
 
+template bool I2C::IsActiveDevice<DelayMode::Standard>(uint8_t addr);
+template bool I2C::IsActiveDevice<DelayMode::RtosMode>(uint8_t addr);
 
+void I2C::ConfigSlave(uint8_t OwnAddr)
+{
+	uint32_t Timing = SCL64MHz;
+
+	LL_I2C_Disable(I2Cx);
+	LL_I2C_ConfigFilters(I2Cx, LL_I2C_ANALOGFILTER_ENABLE,0);
+	LL_I2C_SetTiming(I2Cx, Timing);
+
+	/* I2C Interrupt */
+	LL_I2C_EnableIT_ADDR(I2Cx);
+	LL_I2C_EnableIT_STOP(I2Cx);
+	LL_I2C_EnableIT_RX(I2Cx);
+	LL_I2C_EnableIT_TX(I2Cx);		//TXフラグはすぐに立てるべきではない？
+
+	/* Slave Mode */
+	LL_I2C_AcknowledgeNextData(I2Cx, LL_I2C_ACK);
+	LL_I2C_DisableGeneralCall(I2Cx);
+	LL_I2C_SetOwnAddress1(I2Cx, (OwnAddr << OAR1_BitPos), LL_I2C_OWNADDRESS1_7BIT);
+	LL_I2C_EnableOwnAddress1(I2Cx);
+	LL_I2C_DisableOwnAddress2(I2Cx);
+
+	LL_I2C_Enable(I2Cx);
+}
+
+/* Connection */
+
+// データのみ
 uint32_t I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
 {
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
@@ -105,8 +157,10 @@ uint32_t I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
 
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
-	return Success;
+	return success;
 }
+
+// デバイス内部のアドレスを指定
 uint32_t I2C::MemWrite(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *TxBuf,uint8_t length)
 {
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
@@ -137,8 +191,29 @@ uint32_t I2C::MemWrite(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *TxBu
 
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
-	return Success;
+	return success;
 }
+
+uint32_t I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
+{
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+
+	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, length, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
+
+	for(uint8_t i = 0;i < length;i++)
+	{
+		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
+		RxBuf[i] = LL_I2C_ReceiveData8(I2Cx);
+	}
+
+	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+
+	return success;
+}
+
 uint32_t I2C::MemRead(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *RxBuf,uint8_t length)
 {
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
@@ -171,50 +246,7 @@ uint32_t I2C::MemRead(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *RxBuf
 
 	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
 
-	return Success;
-}
-
-uint32_t I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, length, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
-
-	for(uint8_t i = 0;i < length;i++)
-	{
-		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
-		RxBuf[i] = LL_I2C_ReceiveData8(I2Cx);
-	}
-
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	return Success;
-}
-void I2C::ConfigSlave(uint8_t OwnAddr)
-{
-	uint32_t Timing = I2C_CLOCK_400;
-
-	LL_I2C_Disable(I2Cx);
-	LL_I2C_ConfigFilters(I2Cx, LL_I2C_ANALOGFILTER_ENABLE,0);
-	LL_I2C_SetTiming(I2Cx, Timing);
-
-	/* I2C Interrupt */
-	LL_I2C_EnableIT_ADDR(I2Cx);
-	LL_I2C_EnableIT_STOP(I2Cx);
-	LL_I2C_EnableIT_RX(I2Cx);
-	LL_I2C_EnableIT_TX(I2Cx);		//TXフラグはすぐに立てるべきではない？
-
-	/* Slave Mode */
-	LL_I2C_AcknowledgeNextData(I2Cx, LL_I2C_ACK);
-	LL_I2C_DisableGeneralCall(I2Cx);
-	LL_I2C_SetOwnAddress1(I2Cx, (OwnAddr << I2C_OA1_7BIT_Pos), LL_I2C_OWNADDRESS1_7BIT);
-	LL_I2C_EnableOwnAddress1(I2Cx);
-	LL_I2C_DisableOwnAddress2(I2Cx);
-
-	LL_I2C_Enable(I2Cx);
+	return success;
 }
 
 //Reg1個だけ
@@ -231,6 +263,7 @@ void I2C::Write(uint8_t addr,uint8_t Reg)
 	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 }
+
 //RegとDataを1個ずつ
 void I2C::Write(uint8_t addr,uint8_t Reg,uint8_t Data)
 {
@@ -250,47 +283,6 @@ void I2C::Write(uint8_t addr,uint8_t Reg,uint8_t Data)
 }
 
 #if 0
-uint32_t I2C::WirePinConfig(WirePinStruct *obj)
-uint32_t I2C::IsActiveDevice(uint8_t addr,uint32_t TimeOut,uDelay delay)
-{
-	uint32_t nTime = TimeOut;
-	uint32_t Result = Success;
-
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
-
-	LL_I2C_TransmitData8(I2Cx, 0);
-	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0)
-	{
-		if(LL_SYSTICK_IsActiveCounterFlag() != 0)		// SysTickDelay
-		{
-			nTime--;
-			if(nTime == 0)
-			{
-				Result = Failed;
-				break;
-			}
-		}
-	}
-	return Result;
-}
-{
-	uint32_t ret = 0;
-	GPIO SCL(obj->PortSCL,obj->PinSCL);
-	GPIO SDA(obj->PortSDA,obj->PinSDA);
-
-	ret += SCL.Begin();
-	ret += SDA.Begin();
-
-	SCL.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_OPENDRAIN);
-	SDA.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_OPENDRAIN);
-
-	SCL.AlternateInit(obj->AlternateSCL);
-	SDA.AlternateInit(obj->AlternateSDA);
-
-	return ret;
-}
 uint32_t I2C::Write(uint8_t val)
 {
 	if(index >= I2C_BUFFER_SIZE)

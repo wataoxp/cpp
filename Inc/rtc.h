@@ -10,7 +10,7 @@
 
 #include "periph.h"
 
-namespace TimeParameter{
+namespace RealClockSpace{
 	typedef enum{
 		Success,
 		Initialized,
@@ -18,6 +18,7 @@ namespace TimeParameter{
 		Error_NotSynchro,
 		Clock_NotSet,
 		Alarm_NotModule,
+		Retry,
 	}ConfigStatus;
 
 	constexpr uint32_t SynchroTime = 1000;
@@ -68,26 +69,47 @@ namespace TimeParameter{
 		AlarmStatus ALMB;
 
 	}ConfigParameters;
+
+	typedef struct{
+		uint8_t HourTens;		// HT
+		uint8_t HourUnits;		// HU
+		uint8_t MinuteTens;		// MNT
+		uint8_t MinuteUnits;	// MNU
+		uint8_t SecondTens;	// SNT
+		uint8_t SecondUnits;	// SNU
+	}TimeRegBitField;
+
+	typedef struct{
+		uint8_t YearTens;	// YT
+		uint8_t YearUnits;	// YU
+		uint8_t MonthTens;	// MT
+		uint8_t MonthUnits;	// MU
+		uint8_t DayTens;	// DT
+		uint8_t DayUnits;	// DU
+		uint8_t WeekDayUnits;	// WDU
+	}DateRegBitFiled;
 }
 
 
-class TimeClock{
+class RealClock{
 private:
 	RTC_TypeDef *RTCx;
 	uint32_t CheckInitMode(void);
 	void CheckDBP(void);
 	uint32_t WaitForSynchro(void);
-	void SetALMA(TimeParameter::AlarmStatus *alma);
-	void SetALMB(TimeParameter::AlarmStatus *almb);
+	void SetALMA(RealClockSpace::AlarmStatus *alma);
+	void SetALMB(RealClockSpace::AlarmStatus *almb);
 public:
-	TimeClock(RTC_TypeDef *rtc);
+	RealClock(RTC_TypeDef *rtc);
 	void ClockConfig(void);
 	uint32_t Config(uint32_t HourFormat,uint32_t AsynchPrescaler,uint32_t SynchPrescaler);
 	uint32_t SetTime(uint32_t Format,uint32_t Hours,uint32_t Minutes,uint32_t Seconds);
 	uint32_t SetDate(uint32_t WeekDay,uint32_t Month,uint32_t Day,uint32_t Year);
-	uint32_t SetAlarm(TimeParameter::ConfigParameters *init);
-	uint32_t EnableAlarm(TimeParameter::Options AlarmSelect);
+	uint32_t SetAlarm(RealClockSpace::ConfigParameters *init);
+	uint32_t EnableAlarm(RealClockSpace::Options AlarmSelect);
 	void SetWakeUpTimer(uint32_t Count);
+	void GetTimeRegister(RealClockSpace::TimeRegBitField *tr);
+	void GetDateRegister(RealClockSpace::DateRegBitFiled *dr);
 };
 
 

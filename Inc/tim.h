@@ -19,7 +19,7 @@ namespace TimerPeripheral{
 	}TimerStatus;
 
 	typedef struct{
-		uint32_t Presclaer;
+		uint32_t Prescale;
 		uint32_t Reload;
 
 		/* TIM1~3,14,16,17 */
@@ -62,20 +62,21 @@ public:
 	//Encoder mode
 	uint32_t ConfigEncoderMode(TimerPeripheral::TIM_InputStruct *Ti1,TimerPeripheral::TIM_InputStruct *Ti2,uint32_t Mode);
 
-	// RTOS使用時の代替Delay
-	void Delay(uint32_t nTime);
-
 	// inline
 	void UpdateTimer(void);
 	void EnableTimer(void);
 	void DisableTimer(void);
-	void SetAutoReload(uint32_t Reload);
+	void UpdateConfig(uint32_t psc,uint32_t arr);
 	void SetCH1CompareValue(uint32_t value);
 	void SetCH2CompareValue(uint32_t value);
 	void SetCH3CompareValue(uint32_t value);
 	void SetCH4CompareValue(uint32_t value);
 	void EnablePulse(uint32_t Channel);
 	void DisablePulse(uint32_t Channel);
+
+	void Delay(uint32_t nTime);
+
+	void SetAutoReload(uint32_t Reload);
 };
 
 inline void TIM::UpdateTimer(void)
@@ -93,6 +94,12 @@ inline void TIM::EnableTimer(void)
 inline void TIM::DisableTimer(void)
 {
 	LL_TIM_DisableCounter(TIMx);
+}
+
+inline void TIM::UpdateConfig(uint32_t psc,uint32_t arr)
+{
+	LL_TIM_SetPrescaler(TIMx, psc);
+	LL_TIM_SetAutoReload(TIMx, arr);
 }
 
 inline void TIM::SetAutoReload(uint32_t Reload)
@@ -129,4 +136,5 @@ inline void TIM::DisablePulse(uint32_t Channel)
 {
 	LL_TIM_CC_DisableChannel(TIMx, Channel);
 }
+
 #endif /* TIM_H_ */

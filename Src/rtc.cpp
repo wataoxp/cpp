@@ -7,16 +7,16 @@
 
 #include "rtc.h"
 
-using namespace TimeParameter;
+using namespace RealClockSpace;
 
-TimeClock::TimeClock(RTC_TypeDef *rtc) :RTCx(rtc)
+RealClock::RealClock(RTC_TypeDef *rtc) :RTCx(rtc)
 {
 	;
 }
 /* Private Function */
 
 // RTCが初期化モードかチェック。あるいは有効化
-uint32_t TimeClock::CheckInitMode(void)
+uint32_t RealClock::CheckInitMode(void)
 {
 	uint32_t tmp;
 	__IO uint32_t timeout = SynchroTime;
@@ -44,7 +44,7 @@ uint32_t TimeClock::CheckInitMode(void)
 
 // RTCドメインへのアクセス権のチェック。保護中(DBP=0)なら解除
 // DBPによる保護が有効なとき、割り込みフラグのクリアも出来なくなるので注意
-void TimeClock::CheckDBP(void)
+void RealClock::CheckDBP(void)
 {
 	// PWRドメインへのクロックチェック
 	if(LL_APB1_GRP1_IsEnabledClock(LL_APB1_GRP1_PERIPH_PWR) != 1)
@@ -62,7 +62,7 @@ void TimeClock::CheckDBP(void)
 }
 
 // G0ではなくHALやL4ライブラリの仕様に準拠
-uint32_t TimeClock::WaitForSynchro(void)
+uint32_t RealClock::WaitForSynchro(void)
 {
 	uint32_t tmp;
 	__IO uint32_t timeout = SynchroTime;
@@ -84,7 +84,7 @@ uint32_t TimeClock::WaitForSynchro(void)
 	return Success;
 }
 
-void TimeClock::SetALMA(AlarmStatus *alma)
+void RealClock::SetALMA(AlarmStatus *alma)
 {
 	uint32_t _Hours = __LL_RTC_CONVERT_BIN2BCD(alma->Hours);
 	uint32_t _Minutes = __LL_RTC_CONVERT_BIN2BCD(alma->Minutes);
@@ -112,7 +112,7 @@ void TimeClock::SetALMA(AlarmStatus *alma)
 	LL_RTC_ALMA_SetMask(RTCx, alma->Mask);
 }
 
-void TimeClock::SetALMB(AlarmStatus *almb)
+void RealClock::SetALMB(AlarmStatus *almb)
 {
 	uint32_t _Hours = __LL_RTC_CONVERT_BIN2BCD(almb->Hours);
 	uint32_t _Minutes = __LL_RTC_CONVERT_BIN2BCD(almb->Minutes);
@@ -139,7 +139,7 @@ void TimeClock::SetALMB(AlarmStatus *almb)
 
 /* Public Function */
 
-void TimeClock::ClockConfig(void)
+void RealClock::ClockConfig(void)
 {
 	// RCC_BDCRレジスタも保護対象
 	CheckDBP();
@@ -160,7 +160,7 @@ void TimeClock::ClockConfig(void)
 	LL_RCC_SetRTCClockSource(LL_RCC_RTC_CLKSOURCE_LSE);
 }
 
-uint32_t TimeClock::Config(uint32_t HourFormat,uint32_t AsynchPrescaler,uint32_t SynchPrescaler)
+uint32_t RealClock::Config(uint32_t HourFormat,uint32_t AsynchPrescaler,uint32_t SynchPrescaler)
 {
 	uint32_t ret;
 
@@ -186,7 +186,7 @@ uint32_t TimeClock::Config(uint32_t HourFormat,uint32_t AsynchPrescaler,uint32_t
 	return ret;
 }
 
-uint32_t TimeClock::SetTime(uint32_t Format,uint32_t Hours,uint32_t Minutes,uint32_t Seconds)
+uint32_t RealClock::SetTime(uint32_t Format,uint32_t Hours,uint32_t Minutes,uint32_t Seconds)
 {
 	uint32_t ret;
 	uint32_t _Hours = __LL_RTC_CONVERT_BIN2BCD(Hours);
@@ -213,7 +213,7 @@ uint32_t TimeClock::SetTime(uint32_t Format,uint32_t Hours,uint32_t Minutes,uint
 	return ret;
 }
 
-uint32_t TimeClock::SetDate(uint32_t WeekDay,uint32_t Month,uint32_t Day,uint32_t Year)
+uint32_t RealClock::SetDate(uint32_t WeekDay,uint32_t Month,uint32_t Day,uint32_t Year)
 {
 	uint32_t ret;
 	uint32_t _Month = __LL_RTC_CONVERT_BIN2BCD(Month);
@@ -240,7 +240,7 @@ uint32_t TimeClock::SetDate(uint32_t WeekDay,uint32_t Month,uint32_t Day,uint32_
 	return ret;
 }
 
-uint32_t TimeClock::SetAlarm(ConfigParameters *init)
+uint32_t RealClock::SetAlarm(ConfigParameters *init)
 {
 	uint32_t ret = Alarm_NotModule;
 
@@ -265,7 +265,7 @@ uint32_t TimeClock::SetAlarm(ConfigParameters *init)
 	return ret;
 }
 
-uint32_t TimeClock::EnableAlarm(Options SelectAlarm)
+uint32_t RealClock::EnableAlarm(Options SelectAlarm)
 {
 	uint32_t ret = Alarm_NotModule;
 	CheckDBP();
@@ -297,7 +297,7 @@ uint32_t TimeClock::EnableAlarm(Options SelectAlarm)
 
 	return ret;
 }
-void TimeClock::SetWakeUpTimer(uint32_t Count)
+void RealClock::SetWakeUpTimer(uint32_t Count)
 {
 	CheckDBP();
 
@@ -321,8 +321,39 @@ void TimeClock::SetWakeUpTimer(uint32_t Count)
 	LL_RTC_EnableWriteProtection(RTCx);
 }
 
+void RealClock::GetTimeRegister(TimeRegBitField *tr)
+{
+	uint32_t TimeReg = LL_RTC_ReadReg(RTCx,TR);
+
+	// DRを読みだしてTRのロックを解除
+	LL_RTC_ReadReg(RTCx,DR);
+
+	tr->HourTens = (TimeReg & RTC_TR_HT_Msk) >> RTC_TR_HT_Pos;
+	tr->HourUnits = (TimeReg & RTC_TR_HU_Msk) >> RTC_TR_HU_Pos;
+	tr->MinuteTens = (TimeReg & RTC_TR_MNT_Msk) >> RTC_TR_MNT_Pos;
+	tr->MinuteUnits = (TimeReg & RTC_TR_MNU_Msk) >> RTC_TR_MNU_Pos;
+	tr->SecondTens = (TimeReg & RTC_TR_ST_Msk) >> RTC_TR_ST_Pos;
+	tr->SecondUnits = (TimeReg & RTC_TR_SU_Msk) >> RTC_TR_SU_Pos;
+
+}
+
+void RealClock::GetDateRegister(DateRegBitFiled *dr)
+{
+	uint32_t DateReg = LL_RTC_ReadReg(RTCx,DR);
+
+	dr->YearTens = (DateReg & RTC_DR_YT_Msk) >> RTC_DR_YT_Pos;
+	dr->YearUnits = (DateReg & RTC_DR_YU_Msk) >> RTC_DR_YU_Pos;
+	dr->MonthTens = (DateReg & RTC_DR_MT_Msk) >> RTC_DR_MT_Pos;
+	dr->MonthUnits = (DateReg & RTC_DR_MU_Msk) >> RTC_DR_MU_Pos;
+	dr->DayTens = (DateReg & RTC_DR_DT_Msk) >> RTC_DR_DT_Pos;
+	dr->DayUnits = (DateReg & RTC_DR_DU_Msk) >> RTC_DR_DU_Pos;
+
+	dr->WeekDayUnits = (DateReg & RTC_DR_WDU_Msk) >> RTC_DR_WDU_Pos;
+}
+
 #if 0
-void TimeClock::CheckDBP(void)
+// PWRクロックを厳密に管理する場合
+void RealClock::CheckDBP(void)
 {
 	// PWRドメインへのクロックチェック
 	if(LL_APB1_GRP1_IsEnabledClock(LL_APB1_GRP1_PERIPH_PWR) != 1)

@@ -13,6 +13,8 @@ TIM::TIM(TIM_TypeDef *TIMPORT) :TIMx(TIMPORT)
 	;
 }
 
+// G0x1->TIM2(32Bti Timer)
+// G0B1->Full Timer
 uint32_t TIM::CheckTimerPeriph(void)
 {
 	uint32_t TimNumber = (uint32_t)TIMx;
@@ -20,7 +22,10 @@ uint32_t TIM::CheckTimerPeriph(void)
 
 	switch(TimNumber)
 	{
-#ifdef STM32G0x1
+	case TIM1_BASE:
+		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_TIM1);
+		break;
+#ifdef TIM2
 	case TIM2_BASE:
 		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM2);
 		break;
@@ -28,12 +33,29 @@ uint32_t TIM::CheckTimerPeriph(void)
 	case TIM3_BASE:
 		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM3);
 		break;
-	case TIM1_BASE:
-		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_TIM1);
+#ifdef TIM4
+	case TIM4_BASE:
+		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM4);
 		break;
+#endif
+#ifdef TIM6
+	case TIM6_BASE:
+		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM6);
+		break;
+#endif
+#ifdef TIM7
+	case TIM7_BASE:
+		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM7);
+		break;
+#endif
 	case TIM14_BASE:
 		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_TIM14);
 		break;
+#ifdef TIM15
+	case TIM15_BASE:
+		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_TIM15);
+		break;
+#endif
 	case TIM16_BASE:
 		LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_TIM16);
 		break;
@@ -59,7 +81,7 @@ uint32_t TIM::ConfigTimer(TIM_InitTypedef *Config)
 	}
 
 	LL_TIM_SetClockSource(TIMx, Config->Source);
-	LL_TIM_SetPrescaler(TIMx, Config->Presclaer);
+	LL_TIM_SetPrescaler(TIMx, Config->Prescale);
 	LL_TIM_SetAutoReload(TIMx, Config->Reload);
 
 	if(IS_TIM_COUNTER_MODE_SELECT_INSTANCE(TIMx))
@@ -74,7 +96,7 @@ uint32_t TIM::ConfigTimer(TIM_InitTypedef *Config)
 	CLEAR_REG(TIMx->CCMR1);
 	CLEAR_REG(TIMx->CCMR2);
 
-	return 0;
+	return success;
 }
 
 uint32_t TIM::ConfigPWM(uint32_t Channel,uint32_t mode)
@@ -252,21 +274,14 @@ uint32_t TIM::ConfigEncoderMode(TIM_InputStruct *Ti1,TIM_InputStruct *Ti2,uint32
 	return success;
 }
 
+// PSCで1kまたは1MHzに設定。経過時間を比較する。ARRはMAXで
 void TIM::Delay(uint32_t nTime)
 {
-	__IO uint32_t mDelay = nTime;
-	LL_TIM_ClearFlag_UPDATE(TIMx);
-	LL_TIM_SetCounter(TIMx, 0);
+	uint16_t start = LL_TIM_GetCounter(TIMx);
 
-	while(mDelay)
-	{
-		if(LL_TIM_IsActiveFlag_UPDATE(TIMx) != 0)
-		{
-			LL_TIM_ClearFlag_UPDATE(TIMx);
-			mDelay--;
-		}
-	}
+	while(uint16_t(LL_TIM_GetCounter(TIMx) - start) < nTime);
 }
+
 
 #if 0
 //特に問題はないけどLLライブラリを積極活用する方針に沿って一時休眠
@@ -316,5 +331,22 @@ uint32_t TIM::PWMConfig(uint32_t Channel,uint32_t mode)
 
 	return ret;
 }
+
+void TIM::Delay(uint32_t nTime)
+{
+	__IO uint32_t mDelay = nTime;
+	LL_TIM_ClearFlag_UPDATE(TIMx);
+	LL_TIM_SetCounter(TIMx, 0);
+
+	while(mDelay)
+	{
+		if(LL_TIM_IsActiveFlag_UPDATE(TIMx) != 0)
+		{
+			LL_TIM_ClearFlag_UPDATE(TIMx);
+			mDelay--;
+		}
+	}
+}
+
 #endif
 
