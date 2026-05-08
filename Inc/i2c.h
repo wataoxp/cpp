@@ -8,54 +8,59 @@
 #ifndef INC_I2C_H_
 #define INC_I2C_H_
 
-//#include "delay.h"
 #include "periph.h"
+#include "delay.h"
 
 namespace Wires{
 	typedef enum{
-		success,
+		Complete,
+		TimeOut,
 		Failed,
 		TxOver,
 		RxOver,
-	}WireStatus;
+	}ReturnCode;
 
 	typedef enum{
 		MemAddSize8 = 1,
 		MemAddSize16 = 2,
 	}MemAdd;
 
-	constexpr uint8_t DirectionWrite = 0;
-	constexpr uint8_t DirectionRead = 1;
-
 	// I2C_OAR1レジスタ設定用。7ビットアドレスの場合最下位ビット(OA１)は無視されるので１ビットシフトする
 	constexpr uint8_t OAR1_BitPos = 1;
 
-	constexpr uint32_t SCL64MHz = 0x00C12166;
-	constexpr uint32_t SCL16MHz = 0x00300617;
+	// 400kHz
+	constexpr uint32_t GetClockTiming(CoreClock source)
+	{
+		if(source == PLLCLOCK) return 0x00C12166;
+		else return 0x00300617;
+	}
 
-	constexpr uint32_t IsActiveMaxLoop = 10;
+	constexpr uint32_t WaitMillTimeLimit() { return 100U; }
 }
 
 class I2C{
 private:
 	I2C_TypeDef *I2Cx;
+	DelayPoicy& delay;
 	uint8_t GetMemAddLowByte(uint16_t address);
 	uint8_t GetMemAddHighByte(uint16_t address);
 	uint32_t GetWireBus(void);
-public:
-	I2C(I2C_TypeDef *I2CPORT);
-	uint32_t ConfigMaster(CoreClock clock);
-	void ConfigSlave(uint8_t OwnAddr);
-	template <typename wait>
+
+	uint32_t WaitFlag(uint32_t Mask,uint32_t FlagBit);
 	bool IsActiveDevice(uint8_t addr);
+public:
+	I2C(I2C_TypeDef *pI2C,DelayPoicy& pDelay);
+	Wires::ReturnCode ConfigMaster(CoreClock clock);
+	void ConfigSlave(CoreClock source,uint8_t OwnAddr);
 
-	uint32_t Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length);
-    uint32_t MemWrite(uint8_t addr,uint16_t Reg,Wires::MemAdd MemAddSize,uint8_t *TxBuf,uint8_t length);
-    uint32_t MemRead(uint8_t addr,uint16_t Reg,Wires::MemAdd MemAddSize,uint8_t *RxBuf,uint8_t length);
+	uint8_t GetDeviceAddress();
 
-    uint32_t Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length);
-	void Write(uint8_t addr,uint8_t Reg);
-	void Write(uint8_t addr,uint8_t Reg,uint8_t Data);
+	Wires::ReturnCode Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length);
+	Wires::ReturnCode MemWrite(uint8_t addr,uint16_t Reg,Wires::MemAdd MemAddSize,uint8_t *TxBuf,uint8_t length);
+	Wires::ReturnCode MemRead(uint8_t addr,uint16_t Reg,Wires::MemAdd MemAddSize,uint8_t *RxBuf,uint8_t length);
+
+	Wires::ReturnCode Write(uint8_t addr,uint8_t Reg);
+	Wires::ReturnCode Write(uint8_t addr,uint8_t Reg,uint8_t Data);
 
 	void Enable(void);
 	void Disable(void);
@@ -65,6 +70,7 @@ inline void I2C::Enable(void)
 {
 	LL_I2C_Enable(I2Cx);
 }
+
 inline void I2C::Disable(void)
 {
 	LL_I2C_Disable(I2Cx);

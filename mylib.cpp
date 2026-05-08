@@ -71,10 +71,6 @@ void RCC_Config(void)
 uint32_t RTC_Config(RealClock& rtc)
 {
 	using namespace RealClockSpace;
-	ConfigParameters init;
-	uint32_t ret = 0;
-
-	RTC_StructInit(&init);
 
 	// すでにLSEが駆動しているならLSEは触らない
 	if(LL_RCC_GetRTCClockSource() != LL_RCC_RTC_CLKSOURCE_LSE)
@@ -86,75 +82,8 @@ uint32_t RTC_Config(RealClock& rtc)
 	LL_RCC_EnableRTC();
 	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_RTC);
 
-	ret += rtc.Config(LL_RTC_HOURFORMAT_24HOUR, AsynchDefault, SynchDefault);
-	ret += rtc.SetTime(LL_RTC_TIME_FORMAT_AM_OR_24, init.Hours, init.Minutes, init.Seconds);
-	ret += rtc.SetDate(init.WeekDay, init.Month, init.Day, init.Year);
-
-	if(init.Alarm == Options::Alarm_Enable)
-	{
-		rtc.SetAlarm(&init);
-		rtc.EnableAlarm(init.SelectAlarm);
-	}
-	if(init.WakeUp == Options::WakeUp_Enable)
-	{
-		rtc.SetWakeUpTimer(0);
-	}
-
-	__NVIC_SetPriority(RTC_TAMP_IRQn, 0);
-	__NVIC_EnableIRQ(RTC_TAMP_IRQn);
-
-	// RTC割りこみはEXTIライン
-	LL_EXTI_EnableIT_0_31(LL_EXTI_LINE_19);
-	LL_EXTI_EnableRisingTrig_0_31(LL_EXTI_LINE_19);
-//	LL_EXTI_EnableEvent_0_31(LL_EXTI_LINE_19);
-
-	return ret;
+	return rtc.Config(LL_RTC_HOURFORMAT_24HOUR, AsynchDefault, SynchDefault);
 }
-
-void RTC_StructInit(RealClockSpace::ConfigParameters *init)
-{
-	using namespace RealClockSpace;
-
-	init->Alarm = Options::Alarm_Enable;
-	init->SelectAlarm = Options::ALMA;
-	init->WakeUp = Options::WakeUp_Enable;
-	init->Hours = 16;
-	init->Minutes = 27;
-	init->Seconds = 0;
-	init->WeekDay = LL_RTC_WEEKDAY_TUESDAY;
-	init->Month = LL_RTC_MONTH_FEBRUARY;
-	init->Day = 3;
-	init->Year = 26;
-
-	if(init->Alarm == Options::Alarm_Enable)
-	{
-		if((init->SelectAlarm == Options::ALMA) || (init->SelectAlarm == Options::ALMA_ALMB))
-		{
-			init->ALMA.Hours = 0;
-			init->ALMA.Minutes = 0;
-			init->ALMA.Seconds = 0;
-
-			init->ALMA.Day = 0;
-			init->ALMA.WeekDaySel = AlarmValue::WeekDay_Disable;
-
-			// 日付、時間、分の指定をマスク(無視)
-			init->ALMA.Mask = LL_RTC_ALMA_MASK_DATEWEEKDAY | LL_RTC_ALMA_MASK_HOURS
-					|LL_RTC_ALMA_MASK_MINUTES;
-		}
-		if((init->SelectAlarm == Options::ALMB) || (init->SelectAlarm == Options::ALMA_ALMB))
-		{
-			init->ALMB.Hours = 0;
-			init->ALMB.Minutes = 0;
-			init->ALMB.Seconds = 10;
-			init->ALMB.Day = 0;
-			init->ALMB.WeekDaySel = AlarmValue::WeekDay_Disable;
-
-			init->ALMB.Mask = LL_RTC_ALMB_MASK_DATEWEEKDAY | LL_RTC_ALMB_MASK_HOURS
-								|LL_RTC_ALMB_MASK_MINUTES;
-		}
-	}
-}
-
 
 uint32_t GPIO_Config(GPIO_TypeDef *GPIOx,uint32_t pin,uint32_t Mode)
 {
@@ -180,7 +109,8 @@ uint32_t GPIO_Config(GPIO_TypeDef *GPIOx,uint32_t pin,uint32_t Mode)
 	return ret;
 }
 
-uint32_t MCO_Config(GPIO_TypeDef *GPIOx,uint32_t Pin,uint32_t AF,uint32_t Source,uint32_t Div)
+// SysClk、64分周で固定
+uint32_t MCO_Config(GPIO_TypeDef *GPIOx,uint32_t Pin,uint32_t AF,bool MCOnum)
 {
 	uint32_t ret = 0;
 
@@ -190,19 +120,28 @@ uint32_t MCO_Config(GPIO_TypeDef *GPIOx,uint32_t Pin,uint32_t AF,uint32_t Source
 	MCO.SetParameter(LL_GPIO_PULL_NO, LL_GPIO_MODE_ALTERNATE, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
 	MCO.AlternateInit(AF);
 
-	LL_RCC_ConfigMCO(Source, Div);
+	if(MCOnum)
+	{
+		LL_RCC_ConfigMCO(LL_RCC_MCO1SOURCE_SYSCLK, LL_RCC_MCO1_DIV_64);
+	}
+#ifdef LL_RCC_MCO2SOURCE_SYSCLK
+	else
+	{
+		LL_RCC_ConfigMCO2(LL_RCC_MCO2SOURCE_SYSCLK, LL_RCC_MCO2_DIV_64);
+	}
+#endif
 
 	return ret;
 }
 
-uint32_t EXTI_Config(GPIO_TypeDef *GPIOx,uint32_t pin,uint32_t Pull,uint8_t Mode,uint8_t Trigger)
+uint32_t EXTI_Config(GPIO_TypeDef *GPIOx,uint32_t pin,uint32_t Pull,uint8_t ExtiMode,uint8_t Trigger)
 {
 	uint32_t ret = 0;
 	EXTIR exti(GPIOx,pin);
 	GPIO IOPin(GPIOx,pin);
 
 	ret += exti.Config();
-	exti.ConfigMode_Trigger(Mode, Trigger);
+	exti.ConfigMode_Trigger(ExtiMode, Trigger);
 
 	ret += IOPin.Begin();
 	IOPin.SetParameter(Pull, LL_GPIO_MODE_INPUT, LL_GPIO_SPEED_FREQ_LOW, LL_GPIO_OUTPUT_PUSHPULL);
@@ -298,7 +237,7 @@ uint32_t SPI_MISO_Config(GPIO_TypeDef *GPIOx,uint32_t Pin)
 	return ret;
 }
 
-uint32_t UART_Config(UART& uart,uint32_t sysclk,GPIO_TypeDef *TxPort,uint32_t TxPin,uint32_t TxAf,GPIO_TypeDef *RxPort,uint32_t RxPin,uint32_t RxAf)
+uint32_t UART_Config(UART& uart,CoreClock sysclk,GPIO_TypeDef *TxPort,uint32_t TxPin,uint32_t TxAf,GPIO_TypeDef *RxPort,uint32_t RxPin,uint32_t RxAf)
 {
 	uint32_t ret = 0;
 
@@ -311,7 +250,7 @@ uint32_t UART_Config(UART& uart,uint32_t sysclk,GPIO_TypeDef *TxPort,uint32_t Tx
 	init.Parity = LL_USART_PARITY_ODD;
 
 	// 転送方向の設定
-	init.Direction = LL_USART_DIRECTION_TX;
+	init.Direction = LL_USART_DIRECTION_TX_RX;
 
 	// データのサンプリング回数の設定
 	init.OverSampling = LL_USART_OVERSAMPLING_16;
@@ -324,8 +263,8 @@ uint32_t UART_Config(UART& uart,uint32_t sysclk,GPIO_TypeDef *TxPort,uint32_t Tx
 
 	// ボーレートの設定
 	init.PreScalerDiv = LL_USART_PRESCALER_DIV1;
-//	init.BaudRate = 115200;
-	init.BaudRate = 19200;
+	init.BaudRate = 115200;
+//	init.BaudRate = 19200;
 
 	// FIFOの設定
 	init.TxFifoThreshold = LL_USART_FIFOTHRESHOLD_1_8;
@@ -352,7 +291,7 @@ uint32_t UART_Config(UART& uart,uint32_t sysclk,GPIO_TypeDef *TxPort,uint32_t Tx
 		ret = 1;
 	}
 
-	uart.Config(&init,sysclk);
+	uart.Config(&init,(sysclk*1000*1000));
 
 	return ret;
 }
@@ -410,7 +349,7 @@ uint32_t PWM_Config(TIM& tim,GPIO_TypeDef *GPIOx,uint32_t pin,uint32_t Alternate
 	return ret;
 }
 
-uint32_t ADC_Config(ADC_TypeDef *ADCx,AnalogConverter& adc,uint32_t SysClock,uint32_t adc_channel,GPIO_TypeDef *GPIOx,uint32_t pin)
+uint32_t ADC_Config(ADC_TypeDef *ADCx,AnalogConverter& adc,uint32_t adc_channel,GPIO_TypeDef *GPIOx,uint32_t pin,uDelay delay)
 {
 	uint32_t ret = 0;
 	ADC_Parameter::ADC_ConfigTypedef Config = {0};
@@ -440,7 +379,7 @@ uint32_t ADC_Config(ADC_TypeDef *ADCx,AnalogConverter& adc,uint32_t SysClock,uin
 		Config.TriggerEdge = LL_ADC_REG_TRIG_EXT_RISING;
 	}
 
-	ret += adc.Config(&Config,adc_channel,HSICLOCK);
+	ret += adc.Config(&Config,adc_channel,delay);
 
 	LL_ADC_StartCalibration(ADCx);
 	while((ADCx->CR & ADC_CR_ADCAL) != 0U);

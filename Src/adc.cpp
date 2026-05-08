@@ -6,7 +6,6 @@
  */
 
 #include "adc.h"
-#include "delay.h"
 
 using namespace ADC_Parameter;
 
@@ -15,7 +14,7 @@ AnalogConverter::AnalogConverter(ADC_TypeDef *ADCPort) :ADCx(ADCPort)
 	;
 }
 
-uint32_t AnalogConverter::Config(ADC_ConfigTypedef* Config,uint32_t Channel,CoreClock Clock)
+uint32_t AnalogConverter::Config(ADC_ConfigTypedef* Config,uint32_t Channel,uDelay delay)
 {
 	uint32_t ret = 0;
 
@@ -33,7 +32,7 @@ uint32_t AnalogConverter::Config(ADC_ConfigTypedef* Config,uint32_t Channel,Core
 	CLEAR_REG(ADCx->CFGR2);
 
 	LL_ADC_EnableInternalRegulator(ADCx);
-//	tDelay::SoftMicroDelay(20, Clock);	//レギュレータの安定化待ち。データシート上では20us。s
+	delay(30);	//レギュレータの安定化待ち。データシート上では20us。
 
 	LL_ADC_SetResolution(ADCx, Config->Resolution);
 	LL_ADC_SetDataAlignment(ADCx, Config->DataAlignment);

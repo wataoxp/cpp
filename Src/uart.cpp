@@ -32,7 +32,7 @@ void UART::Config(UART_InitTypedef *init,uint32_t SysClk)
 	}
 	else if(USARTx == USART2)
 	{
-		// G030ではUSART2のクロックソースは選択不可(PCLKのみ)
+		// G0ではUSART2のクロックソースは選択不可(PCLKのみ)
 		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USART2);
 	}
 
@@ -101,4 +101,11 @@ void UART::TransmitData(uint8_t *buf,uint8_t size)
 	}
 	LL_USART_ClearFlag_TC(USARTx);
 	while(LL_USART_IsActiveFlag_TC(USARTx) == 0);
+}
+
+uint16_t UART::ReceiveData(void)
+{
+	while(LL_USART_IsActiveFlag_RXNE_RXFNE(USARTx) == 0);
+
+	return LL_USART_ReceiveData9(USARTx);
 }

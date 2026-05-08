@@ -20,6 +20,8 @@ static inline void SetSystemClockSource(uint32_t src)
 }
 void ConfigPLL(RCC_InitTypedef *rcc)
 {
+	LL_RCC_PLL_Disable();	// PLL設定前に必ず無効化する
+
 	LL_RCC_PLL_ConfigDomain_SYS(rcc->PLLSrc, rcc->PLLM, rcc->PLLN, rcc->PLLR);
 	LL_RCC_PLL_Enable();
 	LL_RCC_PLL_EnableDomain_SYS();

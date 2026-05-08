@@ -63,37 +63,32 @@ public:
 	uint32_t ConfigEncoderMode(TimerPeripheral::TIM_InputStruct *Ti1,TimerPeripheral::TIM_InputStruct *Ti2,uint32_t Mode);
 
 	// inline
-	void UpdateTimer(void);
-	void EnableTimer(void);
-	void DisableTimer(void);
+	inline void EnableTimer() { LL_TIM_EnableCounter(TIMx); }
+	inline void DisableTimer() { LL_TIM_DisableCounter(TIMx); }
+
+	inline void SetAutoReload(uint32_t Reload) { LL_TIM_SetAutoReload(TIMx, Reload); }
+	inline void SetCH1CompareValue(uint32_t value) { LL_TIM_OC_SetCompareCH1(TIMx, value); }
+	inline void SetCH2CompareValue(uint32_t value) { LL_TIM_OC_SetCompareCH2(TIMx, value); }
+	inline void SetCH3CompareValue(uint32_t value) { LL_TIM_OC_SetCompareCH3(TIMx, value); }
+	inline void SetCH4CompareValue(uint32_t value) { LL_TIM_OC_SetCompareCH4(TIMx, value); }
+	inline void EnablePulse(uint32_t Channel) { LL_TIM_CC_EnableChannel(TIMx, Channel); }
+	inline void DisablePulse(uint32_t Channel) { LL_TIM_CC_DisableChannel(TIMx, Channel); }
+
+	void UpdateTimer();
 	void UpdateConfig(uint32_t psc,uint32_t arr);
-	void SetCH1CompareValue(uint32_t value);
-	void SetCH2CompareValue(uint32_t value);
-	void SetCH3CompareValue(uint32_t value);
-	void SetCH4CompareValue(uint32_t value);
-	void EnablePulse(uint32_t Channel);
-	void DisablePulse(uint32_t Channel);
 
-	void Delay(uint32_t nTime);
+	void WaitSetUp();
+	uint32_t GetWaitFlag();
 
-	void SetAutoReload(uint32_t Reload);
+	void mDelay(uint32_t nTime);
+	void uDelay(uint32_t nTime);
 };
 
-inline void TIM::UpdateTimer(void)
+inline void TIM::UpdateTimer()
 {
 	LL_TIM_GenerateEvent_UPDATE(TIMx);			//更新イベントを発生させて分周等を更新
 	while(LL_TIM_IsActiveFlag_UPDATE(TIMx) == 0);
 	LL_TIM_ClearFlag_UPDATE(TIMx);				//更新イベントフラグをクリア
-}
-
-inline void TIM::EnableTimer(void)
-{
-	LL_TIM_EnableCounter(TIMx);
-}
-
-inline void TIM::DisableTimer(void)
-{
-	LL_TIM_DisableCounter(TIMx);
 }
 
 inline void TIM::UpdateConfig(uint32_t psc,uint32_t arr)
@@ -102,39 +97,15 @@ inline void TIM::UpdateConfig(uint32_t psc,uint32_t arr)
 	LL_TIM_SetAutoReload(TIMx, arr);
 }
 
-inline void TIM::SetAutoReload(uint32_t Reload)
+inline void TIM::WaitSetUp()
 {
-	LL_TIM_SetAutoReload(TIMx, Reload);
+	LL_TIM_SetCounter(TIMx, 0);
+	LL_TIM_ClearFlag_UPDATE(TIMx);
 }
 
-inline void TIM::SetCH1CompareValue(uint32_t value)
+inline uint32_t TIM::GetWaitFlag()
 {
-	LL_TIM_OC_SetCompareCH1(TIMx, value);
-}
-
-inline void TIM::SetCH2CompareValue(uint32_t value)
-{
-	LL_TIM_OC_SetCompareCH2(TIMx, value);
-}
-
-inline void TIM::SetCH3CompareValue(uint32_t value)
-{
-	LL_TIM_OC_SetCompareCH3(TIMx, value);
-}
-
-inline void TIM::SetCH4CompareValue(uint32_t value)
-{
-	LL_TIM_OC_SetCompareCH4(TIMx, value);
-}
-
-inline void TIM::EnablePulse(uint32_t Channel)
-{
-	LL_TIM_CC_EnableChannel(TIMx, Channel);
-}
-
-inline void TIM::DisablePulse(uint32_t Channel)
-{
-	LL_TIM_CC_DisableChannel(TIMx, Channel);
+	return LL_TIM_IsActiveFlag_UPDATE(TIMx);
 }
 
 #endif /* TIM_H_ */

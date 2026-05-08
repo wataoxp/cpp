@@ -94,10 +94,11 @@ typedef enum{
 }GPIO_Pin;
 
 typedef enum{
-	PORTA,
-	PORTB,
-	PORTC,
-	PORTD,
+	PORTA = 0,
+	PORTB = 1,
+	PORTC = 2,
+	PORTD = 3,
+	PORTE = 4,
 	PORTF = 5,
 	NoPort = UINT8_MAX,
 }GPIO_Port;

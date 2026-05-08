@@ -6,15 +6,17 @@
  */
 #include "exti.h"
 
+using namespace ExtiCommands;
+
 EXTIR::EXTIR(GPIO_TypeDef *GPIOPORT,uint32_t pin) :GPIOx(GPIOPORT),PinPos(pin)
 {
 	;
 }
 
 /*** Private ***/
-inline GPIO_Port EXTIR::CheckPort(void)
+GPIO_Port EXTIR::CheckPort(void)
 {
-	GPIO_Port ret = (GPIO_Port)UINT8_MAX;
+	GPIO_Port ret;
 
 	if(GPIOx == GPIOA)
 	{
@@ -28,7 +30,13 @@ inline GPIO_Port EXTIR::CheckPort(void)
 	{
 		ret = PORTC;
 	}
-#ifdef STM32G0xx
+#ifdef GPIOE
+	else if(GPIOx == GPIOE)
+	{
+		ret = PORTE;
+	}
+#endif
+#ifdef GPIOD
 	else if(GPIOx == GPIOD)
 	{
 		ret = PORTD;
@@ -40,17 +48,24 @@ inline GPIO_Port EXTIR::CheckPort(void)
 	}
 	else
 	{
-		;
+		ret = NoPort;
 	}
 	return ret;
 }
 
-void EXTIR::SetSource(GPIO_Port port)
+uint32_t EXTIR::SetSource(GPIO_Port port)
 {
 	uint32_t Reg = PinPos / 4;
 	uint32_t Bit = (PinPos % 4) * 8;
 
-	MODIFY_REG(EXTI->EXTICR[Reg],ExtiCommands::EXTICR_Msk << Bit, port << Bit);
+	if(PinPos > Pin15)
+	{
+		return NotPin;
+	}
+
+	MODIFY_REG(EXTI->EXTICR[Reg],EXTICR_Mask << Bit, port << Bit);
+
+	return success;
 }
 
 void EXTIR::ExtiMode(uint8_t Mode,uint32_t Line)
@@ -99,14 +114,19 @@ void EXTIR::ExtiTrigger(uint8_t Trigger,uint32_t Line)
 uint32_t EXTIR::Config(void)
 {
 	GPIO_Port Port;
-	uint32_t ErrCode = 0;
 
 	Port = CheckPort();
 
-	ErrCode = (uint32_t)Port;
-	SetSource(Port);
+	if(Port == NoPort)
+	{
+		return NotPort;
+	}
+	if(SetSource(Port) != success)
+	{
+		return NotPin;
+	}
 
-	return ErrCode;
+	return success;
 }
 
 void EXTIR::ConfigMode_Trigger(uint8_t Mode,uint8_t Trigger)

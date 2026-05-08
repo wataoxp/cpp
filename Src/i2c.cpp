@@ -6,12 +6,10 @@
  */
 
 #include "i2c.h"
-#include "delay.h"
-#include <string.h>
 
 using namespace Wires;
 
-I2C::I2C(I2C_TypeDef *I2CPORT) :I2Cx(I2CPORT)
+I2C::I2C(I2C_TypeDef *pI2C,DelayPoicy& pDelay) :I2Cx(pI2C),delay(pDelay)
 {
 	;
 }
@@ -54,7 +52,7 @@ inline uint32_t I2C::GetWireBus(void)
 
 /* Config */
 
-uint32_t I2C::ConfigMaster(CoreClock clock)
+ReturnCode I2C::ConfigMaster(CoreClock clock)
 {
 	uint32_t Periphs;
 	uint32_t Timing;
@@ -66,7 +64,7 @@ uint32_t I2C::ConfigMaster(CoreClock clock)
 		return Failed;
 	}
 
-	Timing = (clock == PLLCLOCK)? SCL64MHz:SCL16MHz;
+	Timing = GetClockTiming(clock);
 
 	LL_APB1_GRP1_EnableClock(Periphs);
 
@@ -79,43 +77,12 @@ uint32_t I2C::ConfigMaster(CoreClock clock)
 
 	LL_I2C_Enable(I2Cx);
 
-	return success;
+	return Complete;
 }
 
-template <typename wait>
-bool I2C::IsActiveDevice(uint8_t addr)
+void I2C::ConfigSlave(CoreClock source,uint8_t OwnAddr)
 {
-	bool Result = false;
-	uint32_t tmp = 0,count = 0;
-
-	do
-	{
-		while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-		LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
-
-		LL_I2C_TransmitData8(I2Cx, 0);
-
-		wait::mDelay(5);		// 送信完了を疑似的に待つ
-		tmp = LL_I2C_IsActiveFlag_NACK(I2Cx);	// NACKを受信したなら継続
-		LL_I2C_ClearFlag_NACK(I2Cx);
-
-		while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-		LL_I2C_ClearFlag_STOP(I2Cx);
-
-		count++;
-	}while((tmp) && (count < Wires::IsActiveMaxLoop));
-
-	if(count < Wires::IsActiveMaxLoop) Result = true;
-
-	return Result;
-}
-
-template bool I2C::IsActiveDevice<DelayMode::Standard>(uint8_t addr);
-template bool I2C::IsActiveDevice<DelayMode::RtosMode>(uint8_t addr);
-
-void I2C::ConfigSlave(uint8_t OwnAddr)
-{
-	uint32_t Timing = SCL64MHz;
+	uint32_t Timing = GetClockTiming(source);
 
 	LL_I2C_Disable(I2Cx);
 	LL_I2C_ConfigFilters(I2Cx, LL_I2C_ANALOGFILTER_ENABLE,0);
@@ -137,147 +104,224 @@ void I2C::ConfigSlave(uint8_t OwnAddr)
 	LL_I2C_Enable(I2Cx);
 }
 
+/* DeviceCheck */
+
+// ISR & FlagがCheckPatternに一致するかチェック
+uint32_t I2C::WaitFlag(uint32_t Mask,uint32_t FlagBit)
+{
+	uint32_t Ret = 1;
+	uint32_t TimeCount = WaitMillTimeLimit();
+
+	delay.WaitSetUp();
+
+	while(TimeCount)
+	{
+		if(delay.GetWaitFlag())
+		{
+			TimeCount--;
+		}
+		if((I2Cx->ISR & Mask) == FlagBit)
+		{
+			Ret = 0;
+			break;
+		}
+	}
+	return Ret;
+}
+
+bool I2C::IsActiveDevice(uint8_t addr)
+{
+	uint32_t isNACK = 0;
+
+	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+	LL_I2C_TransmitData8(I2Cx, 0);
+
+	delay.mDelay(WaitMillTimeLimit());
+	isNACK = LL_I2C_IsActiveFlag_NACK(I2Cx);
+
+	LL_I2C_ClearFlag_STOP(I2Cx);
+	LL_I2C_ClearFlag_NACK(I2Cx);
+
+	return (isNACK == 0)? true:false;
+}
+
+uint8_t I2C::GetDeviceAddress()
+{
+	uint8_t DeviceAddress = 0;
+
+	for(DeviceAddress = 0;DeviceAddress < UINT8_MAX;DeviceAddress++)
+	{
+		if(IsActiveDevice(DeviceAddress))
+		{
+			break;
+		}
+	}
+	return (DeviceAddress < UINT8_MAX)? (DeviceAddress >> 1):UINT8_MAX;
+}
+
 /* Connection */
 
 // データのみ
-uint32_t I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
+ReturnCode I2C::Transmit(uint8_t addr,uint8_t *TxBuf,uint8_t length)
 {
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+	uint32_t Ret = 0;
+
+	Ret = WaitFlag(I2C_ISR_BUSY,0);
 
 	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, length, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
 	for(uint8_t i = 0;i < length;i++)
 	{
 		LL_I2C_TransmitData8(I2Cx, TxBuf[i]);
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 	}
 
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_STOPF,I2C_ISR_STOPF);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	return success;
+	return (Ret == 0)? Complete:TimeOut;
 }
 
 // デバイス内部のアドレスを指定
-uint32_t I2C::MemWrite(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *TxBuf,uint8_t length)
+ReturnCode I2C::MemWrite(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *TxBuf,uint8_t length)
 {
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+	uint32_t Ret = 0;
+
+	Ret = WaitFlag(I2C_ISR_BUSY,0);
 
 	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, (length+MemAddSize), LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
 	if(MemAddSize == MemAddSize8)
 	{
 		LL_I2C_TransmitData8(I2Cx, GetMemAddLowByte(Reg));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 	}
 	else
 	{
 		LL_I2C_TransmitData8(I2Cx, GetMemAddHighByte(Reg));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 		LL_I2C_TransmitData8(I2Cx, GetMemAddLowByte(Reg));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 	}
 
 	for(uint8_t i = 0;i < length;i++)
 	{
 		LL_I2C_TransmitData8(I2Cx, TxBuf[i]);
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 	}
 
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_STOPF,I2C_ISR_STOPF);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	return success;
+	return (Ret == 0)? Complete:TimeOut;
 }
 
-uint32_t I2C::Receive(uint8_t addr,uint8_t *RxBuf,uint8_t length)
+ReturnCode I2C::MemRead(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *RxBuf,uint8_t length)
 {
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+	uint32_t Ret = 0;
 
-	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, length, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
-
-	for(uint8_t i = 0;i < length;i++)
-	{
-		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
-		RxBuf[i] = LL_I2C_ReceiveData8(I2Cx);
-	}
-
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
-	LL_I2C_ClearFlag_STOP(I2Cx);
-
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	return success;
-}
-
-uint32_t I2C::MemRead(uint8_t addr,uint16_t Reg,MemAdd MemAddSize,uint8_t *RxBuf,uint8_t length)
-{
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+	Ret = WaitFlag(I2C_ISR_BUSY,0);
 	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, MemAddSize, LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
 
 	if(MemAddSize == MemAddSize8)
 	{
 		LL_I2C_TransmitData8(I2Cx, GetMemAddLowByte(Reg));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 	}
 	else
 	{
 		LL_I2C_TransmitData8(I2Cx, GetMemAddHighByte(Reg));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 		LL_I2C_TransmitData8(I2Cx, GetMemAddLowByte(Reg));
-		while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 	}
 
-	while(LL_I2C_IsActiveFlag_TC(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_TC, I2C_ISR_TC);
+
 	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, length, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_READ);
 
 	for(uint8_t i = 0;i < length;i++)
 	{
-		while(LL_I2C_IsActiveFlag_RXNE(I2Cx) == 0);
+		Ret = WaitFlag(I2C_ISR_RXNE,I2C_ISR_RXNE);
 		RxBuf[i] = LL_I2C_ReceiveData8(I2Cx);
 	}
 
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_STOPF,I2C_ISR_STOPF);
 	LL_I2C_ClearFlag_STOP(I2Cx);
 
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
-
-	return success;
+	return (Ret == 0)? Complete:TimeOut;
 }
 
 //Reg1個だけ
-void I2C::Write(uint8_t addr,uint8_t Reg)
+ReturnCode I2C::Write(uint8_t addr,uint8_t Reg)
 {
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+	uint32_t Ret = 0;
+	Ret = WaitFlag(I2C_ISR_BUSY,0);
 
-	I2Cx->CR2 = 0;
-	I2Cx->CR2 = addr | DirectionWrite << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | 1 << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
+	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
 	LL_I2C_TransmitData8(I2Cx, Reg);
-	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_STOPF,I2C_ISR_STOPF);
 	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	return (Ret == 0)? Complete:TimeOut;
 }
 
 //RegとDataを1個ずつ
-void I2C::Write(uint8_t addr,uint8_t Reg,uint8_t Data)
+ReturnCode I2C::Write(uint8_t addr,uint8_t Reg,uint8_t Data)
 {
-	while(LL_I2C_IsActiveFlag_BUSY(I2Cx) != 0);
+	uint32_t Ret = 0;
 
-	I2Cx->CR2 = 0;
-	I2Cx->CR2 = addr | DirectionWrite << I2C_CR2_RD_WRN_Pos | I2C_CR2_START | 2 << I2C_CR2_NBYTES_Pos | I2C_CR2_AUTOEND;
+	Ret = WaitFlag(I2C_ISR_BUSY,0);
+
+	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 2, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
 	LL_I2C_TransmitData8(I2Cx, Reg);
-	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 
 	LL_I2C_TransmitData8(I2Cx, Data);
-	while(LL_I2C_IsActiveFlag_TXE(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
 
-	while(LL_I2C_IsActiveFlag_STOP(I2Cx) == 0);
+	Ret = WaitFlag(I2C_ISR_STOPF,I2C_ISR_STOPF);
 	LL_I2C_ClearFlag_STOP(I2Cx);
+
+	return (Ret == 0)? Complete:TimeOut;
 }
+
+#if 0
+//bool I2C::IsActiveDevice(uint8_t addr)
+//{
+//	uint32_t Ret = 0;
+//
+////	WaitFlag(I2C_ISR_BUSY);
+//	LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, 1, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+//
+//	LL_I2C_TransmitData8(I2Cx, 0);
+//	Ret = WaitFlag(I2C_ISR_TXE,I2C_ISR_TXE);
+////	WaitFlag(I2C_ISR_STOPF,SET);
+//	LL_I2C_ClearFlag_STOP(I2Cx);
+//	LL_I2C_ClearFlag_NACK(I2Cx);
+//
+//	return (Ret == 0)? true:false;
+//}
+
+//uint32_t I2C::WaitFlag(uint32_t Flag)
+//{
+//	uint32_t Ret = 1;
+//	uint32_t TimeCount = 0;
+//
+//	while(TimeCount < TimeOutLimit)
+//	{
+//		delay.uDelay(WaitTime::MicroTime);
+//		if(I2Cx->ISR & Flag)
+//		{
+//			Ret = 0;
+//			break;
+//		}
+//		TimeCount += WaitTime::MicroTime;
+//	}
+//	return Ret;
+//}
+#endif

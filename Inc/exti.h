@@ -12,8 +12,14 @@
 #include "periph.h"
 
 namespace ExtiCommands{
-	constexpr uint32_t EXTICR_Msk = 0x07;
-	constexpr uint32_t IoPortSpace = 0x00000400UL;
+	constexpr uint32_t EXTICR_Mask = EXTI_EXTICR1_EXTI0_Msk;
+
+	typedef enum{
+		success,
+		NotPort,
+		NotPin,
+	}ExtiReturnCode;
+
 }
 
 class EXTIR{
@@ -21,10 +27,8 @@ private:
 	GPIO_TypeDef *GPIOx;
 	uint32_t PinPos;
 
-	inline IRQn_Type CheckExtiLine(void);
-	inline GPIO_Port CheckPort(void);
-
-	void SetSource(GPIO_Port port);
+	GPIO_Port CheckPort(void);
+	uint32_t SetSource(GPIO_Port port);
 	void ExtiMode(uint8_t Mode,uint32_t Line);
 	void ExtiTrigger(uint8_t Trigger,uint32_t Line);
 public:

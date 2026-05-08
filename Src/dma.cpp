@@ -117,8 +117,8 @@ uint32_t DMA::StopDMAisChannel1(void)
 
 uint32_t DMA::StopDMAisChannel2(void)
 {
-//	while(LL_DMA_IsActiveFlag_TC2(DMAx) == 0);
-//	LL_DMA_ClearFlag_TC2(DMAx);
+	while(LL_DMA_IsActiveFlag_TC2(DMAx) == 0);
+	LL_DMA_ClearFlag_TC2(DMAx);
 	LL_DMA_DisableChannel(DMAx, LL_DMA_CHANNEL_2);
 
 	return LL_DMA_IsActiveFlag_TE2(DMAx);

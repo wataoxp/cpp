@@ -92,6 +92,9 @@ void RealClock::SetALMA(AlarmStatus *alma)
 
 	LL_RTC_ALMA_Disable(RTCx);
 
+	// アラーム更新許可待ち
+	while(LL_RTC_IsActiveFlag_ALRAW(RTCx) == 0);
+
 	// 日付をセットする
 	if(alma->WeekDaySel == AlarmValue::WeekDay_Disable)
 	{
@@ -110,6 +113,11 @@ void RealClock::SetALMA(AlarmStatus *alma)
 	LL_RTC_ALMA_ConfigTime(RTCx, LL_RTC_ALMA_TIME_FORMAT_AM, _Hours, _Minutes, _Seconds);
 
 	LL_RTC_ALMA_SetMask(RTCx, alma->Mask);
+
+	LL_RTC_ClearFlag_ALRA(RTCx);
+	LL_RTC_EnableIT_ALRA(RTCx);
+
+	LL_RTC_ALMA_Enable(RTCx);
 }
 
 void RealClock::SetALMB(AlarmStatus *almb)
@@ -120,20 +128,27 @@ void RealClock::SetALMB(AlarmStatus *almb)
 
 	LL_RTC_ALMB_Disable(RTCx);
 
+	while(LL_RTC_IsActiveFlag_ALRBW(RTCx) == 0);
+
 	if(almb->WeekDaySel == AlarmValue::WeekDay_Disable)
 	{
-		LL_RTC_ALMA_DisableWeekday(RTCx);
-		LL_RTC_ALMA_SetDay(RTCx, __LL_RTC_CONVERT_BIN2BCD(almb->Day));
+		LL_RTC_ALMB_DisableWeekday(RTCx);
+		LL_RTC_ALMB_SetDay(RTCx, __LL_RTC_CONVERT_BIN2BCD(almb->Day));
 	}
 	else
 	{
-		LL_RTC_ALMA_EnableWeekday(RTCx);
-		LL_RTC_ALMA_SetWeekDay(RTCx, __LL_RTC_CONVERT_BIN2BCD(almb->Day));
+		LL_RTC_ALMB_EnableWeekday(RTCx);
+		LL_RTC_ALMB_SetWeekDay(RTCx, __LL_RTC_CONVERT_BIN2BCD(almb->Day));
 	}
 
 	LL_RTC_ALMB_ConfigTime(RTCx, LL_RTC_ALMB_TIME_FORMAT_AM, _Hours, _Minutes, _Seconds);
 
 	LL_RTC_ALMB_SetMask(RTCx, almb->Mask);
+
+	LL_RTC_ClearFlag_ALRB(RTCx);
+	LL_RTC_EnableIT_ALRB(RTCx);
+
+	LL_RTC_ALMB_Enable(RTCx);
 }
 
 
@@ -240,7 +255,7 @@ uint32_t RealClock::SetDate(uint32_t WeekDay,uint32_t Month,uint32_t Day,uint32_
 	return ret;
 }
 
-uint32_t RealClock::SetAlarm(ConfigParameters *init)
+uint32_t RealClock::SetAlarm(AlarmParameters *init)
 {
 	uint32_t ret = Alarm_NotModule;
 
@@ -265,38 +280,32 @@ uint32_t RealClock::SetAlarm(ConfigParameters *init)
 	return ret;
 }
 
-uint32_t RealClock::EnableAlarm(Options SelectAlarm)
+uint32_t RealClock::DisableAlarm(RealClockSpace::Options select)
 {
 	uint32_t ret = Alarm_NotModule;
+
 	CheckDBP();
 
 	LL_RTC_DisableWriteProtection(RTCx);
 
-	if((SelectAlarm == Options::ALMA) || (SelectAlarm == Options::ALMA_ALMB))
+	if(select == Options::ALMA || select == Options::ALMA_ALMB)
 	{
-		LL_RTC_ALMA_Disable(RTCx);
 		while(LL_RTC_IsActiveFlag_ALRAW(RTCx) == 0);
 		LL_RTC_ClearFlag_ALRA(RTCx);
-		LL_RTC_EnableIT_ALRA(RTCx);
-		LL_RTC_ALMA_Enable(RTCx);
-
-		ret = Success;
+		LL_RTC_DisableIT_ALRA(RTCx);
+		LL_RTC_ALMA_Disable(RTCx);
 	}
-	if((SelectAlarm == Options::ALMB) || (SelectAlarm == Options::ALMA_ALMB))
+	if(select == Options::ALMB || select == Options::ALMA_ALMB)
 	{
-		LL_RTC_ALMB_Disable(RTCx);
 		while(LL_RTC_IsActiveFlag_ALRBW(RTCx) == 0);
 		LL_RTC_ClearFlag_ALRB(RTCx);
-		LL_RTC_EnableIT_ALRB(RTCx);
-		LL_RTC_ALMB_Enable(RTCx);
-
-		ret = Success;
+		LL_RTC_DisableIT_ALRB(RTCx);
+		LL_RTC_ALMB_Disable(RTCx);
 	}
-
-	LL_RTC_EnableWriteProtection(RTCx);
 
 	return ret;
 }
+
 void RealClock::SetWakeUpTimer(uint32_t Count)
 {
 	CheckDBP();
@@ -373,6 +382,40 @@ void RealClock::CheckDBP(void)
 		LL_APB1_GRP1_DisableClock(LL_APB1_GRP1_PERIPH_PWR);
 		__NOP();
 	}
+}
+
+// 有効化を分離していたもの
+uint32_t RealClock::EnableAlarm(Options SelectAlarm)
+{
+	uint32_t ret = Alarm_NotModule;
+	CheckDBP();
+
+	LL_RTC_DisableWriteProtection(RTCx);
+
+	if((SelectAlarm == Options::ALMA) || (SelectAlarm == Options::ALMA_ALMB))
+	{
+		LL_RTC_ALMA_Disable(RTCx);
+		while(LL_RTC_IsActiveFlag_ALRAW(RTCx) == 0);
+		LL_RTC_ClearFlag_ALRA(RTCx);
+		LL_RTC_EnableIT_ALRA(RTCx);
+		LL_RTC_ALMA_Enable(RTCx);
+
+		ret = Success;
+	}
+	if((SelectAlarm == Options::ALMB) || (SelectAlarm == Options::ALMA_ALMB))
+	{
+		LL_RTC_ALMB_Disable(RTCx);
+		while(LL_RTC_IsActiveFlag_ALRBW(RTCx) == 0);
+		LL_RTC_ClearFlag_ALRB(RTCx);
+		LL_RTC_EnableIT_ALRB(RTCx);
+		LL_RTC_ALMB_Enable(RTCx);
+
+		ret = Success;
+	}
+
+	LL_RTC_EnableWriteProtection(RTCx);
+
+	return ret;
 }
 #endif
 

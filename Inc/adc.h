@@ -9,6 +9,7 @@
 #define ADC_H_
 
 #include "periph.h"
+#include "delay.h"
 
 namespace ADC_Parameter{
 	typedef enum{
@@ -43,8 +44,6 @@ namespace ADC_Parameter{
 	}ADC_ConfigTypedef;
 }
 
-
-
 class AnalogConverter{
 private:
 	ADC_TypeDef *ADCx;
@@ -53,7 +52,7 @@ private:
 	uint32_t SequenceMode(uint32_t Channel,uint32_t length);
 public:
 	AnalogConverter(ADC_TypeDef *ADCPort);
-	uint32_t Config(ADC_Parameter::ADC_ConfigTypedef* Config,uint32_t Channel,CoreClock SysClock);
+	uint32_t Config(ADC_Parameter::ADC_ConfigTypedef* Config,uint32_t Channel,uDelay delay);
 
 	uint16_t StartSoftConvert(void);
 	void DisableADC(void);

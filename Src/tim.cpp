@@ -185,7 +185,8 @@ uint32_t* TIM::GetCCxRegAddr(uint32_t Channel)
 
 uint32_t TIM::ConfigInput(uint32_t Channel,uint32_t Polarity)
 {
-	if(Channel > LL_TIM_CHANNEL_CH6)
+	// G0シリーズではTI2までしか機能しない？
+	if(Channel > LL_TIM_CHANNEL_CH2)
 	{
 		return NotChannel;
 	}
@@ -195,20 +196,61 @@ uint32_t TIM::ConfigInput(uint32_t Channel,uint32_t Polarity)
 		LL_TIM_CC_DisableChannel(TIMx, Channel);
 	}
 
-	LL_TIM_IC_SetActiveInput(TIMx, Channel, LL_TIM_ACTIVEINPUT_DIRECTTI);		//CC1をT1入力に
-	LL_TIM_IC_SetPrescaler(TIMx, Channel, LL_TIM_ICPSC_DIV1);					//1エッジでキャプチャ開始
-	LL_TIM_IC_SetFilter(TIMx, Channel, LL_TIM_IC_FILTER_FDIV16_N8);				//8回フィルタ
-//	LL_TIM_IC_SetFilter(TIMx, Channel, LL_TIM_IC_FILTER_FDIV1);					//フィルター無し
-	LL_TIM_IC_SetPolarity(TIMx, Channel, Polarity);								//指定した極性のエッジでキャプチャ
+	if(Channel == LL_TIM_CHANNEL_CH1)
+	{
+		LL_TIM_IC_SetActiveInput(TIMx, Channel, LL_TIM_ACTIVEINPUT_DIRECTTI);		// CC1をTI1入力に
+		LL_TIM_SetTriggerInput(TIMx, LL_TIM_TS_TI1FP1);								// TI1FP1をトリガ設定
+	}
+	else
+	{
+		LL_TIM_IC_SetActiveInput(TIMx, Channel, LL_TIM_ACTIVEINPUT_DIRECTTI);		// CC2をTI2入力に
+		LL_TIM_SetTriggerInput(TIMx, LL_TIM_TS_TI1FP1);								// TI2FP2をトリガ設定
+	}
+
+	LL_TIM_IC_SetPrescaler(TIMx, Channel, LL_TIM_ICPSC_DIV1);					// 1エッジでキャプチャ開始
+	LL_TIM_IC_SetFilter(TIMx, Channel, LL_TIM_IC_FILTER_FDIV16_N8);				// 8回フィルタ
+	LL_TIM_IC_SetPolarity(TIMx, Channel, Polarity);								// 指定した極性のエッジでキャプチャ
 
 	//スレーブモード
-	LL_TIM_SetTriggerInput(TIMx, LL_TIM_TS_TI1FP1);								//TI1FP1をトリガ設定
-	LL_TIM_SetSlaveMode(TIMx, LL_TIM_SLAVEMODE_RESET);							//TI1FP1の立ち上がりでCNTリセット
+	LL_TIM_SetSlaveMode(TIMx, LL_TIM_SLAVEMODE_RESET);							// TIx信号の立ち上がりでCNTリセット
+
+	// URSビットのセット。カウンタのオーバーフローでのみUIFがセット
+	LL_TIM_SetUpdateSource(TIMx, LL_TIM_UPDATESOURCE_COUNTER);
 
 	LL_TIM_CC_EnableChannel(TIMx, Channel);
 
 	return success;
 }
+
+//uint32_t TIM::ConfigInput(uint32_t Channel,uint32_t Polarity)
+//{
+//	if(Channel > LL_TIM_CHANNEL_CH6)
+//	{
+//		return NotChannel;
+//	}
+//
+//	if(LL_TIM_CC_IsEnabledChannel(TIMx, Channel) != 0)
+//	{
+//		LL_TIM_CC_DisableChannel(TIMx, Channel);
+//	}
+//
+//	LL_TIM_IC_SetActiveInput(TIMx, Channel, LL_TIM_ACTIVEINPUT_DIRECTTI);		// CC1をT1入力に
+//	LL_TIM_IC_SetPrescaler(TIMx, Channel, LL_TIM_ICPSC_DIV1);					// 1エッジでキャプチャ開始
+//	LL_TIM_IC_SetFilter(TIMx, Channel, LL_TIM_IC_FILTER_FDIV16_N8);				// 8回フィルタ
+////	LL_TIM_IC_SetFilter(TIMx, Channel, LL_TIM_IC_FILTER_FDIV1);					// フィルター無し
+//	LL_TIM_IC_SetPolarity(TIMx, Channel, Polarity);								// 指定した極性のエッジでキャプチャ
+//
+//	//スレーブモード
+//	LL_TIM_SetTriggerInput(TIMx, LL_TIM_TS_TI1FP1);								// TI1FP1をトリガ設定
+//	LL_TIM_SetSlaveMode(TIMx, LL_TIM_SLAVEMODE_RESET);							// TIx信号の立ち上がりでCNTリセット
+//
+//	// URSビットのセット。カウンタのオーバーフローでのみUIFがセット
+//	LL_TIM_SetUpdateSource(TIMx, LL_TIM_UPDATESOURCE_COUNTER);
+//
+//	LL_TIM_CC_EnableChannel(TIMx, Channel);
+//
+//	return success;
+//}
 
 void TIM::ConfigCombinedCh(uint32_t ch1Pol,uint32_t ch2Pol)
 {
@@ -274,79 +316,22 @@ uint32_t TIM::ConfigEncoderMode(TIM_InputStruct *Ti1,TIM_InputStruct *Ti2,uint32
 	return success;
 }
 
+
+/* Timer Delay */
+
+void TIM::mDelay(uint32_t nTime)
+{
+	for(uint32_t i = 0;i < nTime;i++)
+	{
+		uDelay(1000);
+	}
+}
+
 // PSCで1kまたは1MHzに設定。経過時間を比較する。ARRはMAXで
-void TIM::Delay(uint32_t nTime)
+void TIM::uDelay(uint32_t nTime)
 {
 	uint16_t start = LL_TIM_GetCounter(TIMx);
 
 	while(uint16_t(LL_TIM_GetCounter(TIMx) - start) < nTime);
 }
-
-
-#if 0
-//特に問題はないけどLLライブラリを積極活用する方針に沿って一時休眠
-uint32_t TIM::PWMConfig(uint32_t Channel,uint32_t mode)
-{
-	uint32_t ret = success;
-	uint32_t tmpccEr = 0;
-	uint32_t tmpccMr = 0;
-
-	uint32_t *CCMRx_Reg;			//チャネルに応じたCCMRxレジスタのアドレスを格納
-
-	tmpccEr |= Channel;				//CCER,CCxE
-//	tmpccEr |= Channel << 1;		//CCER,CCxP,ActiveLow
-
-	//CCMRx,OCxM。LL_TIM_OCMODE_PWM1がすでに4ビット左シフトされた値なのでビットシフトはその分調節
-	switch(Channel)
-	{
-	case LL_TIM_CHANNEL_CH1:
-		tmpccMr = mode | TIM_CCMR1_OC1PE;
-		CCMRx_Reg = (uint32_t*)&TIMx->CCMR1;
-		break;
-	case LL_TIM_CHANNEL_CH2:
-		tmpccMr = mode << (TIM_CCMR1_OC2M_Pos - 4) | TIM_CCMR1_OC2PE;
-		CCMRx_Reg = (uint32_t*)&TIMx->CCMR1;
-		break;
-	case LL_TIM_CHANNEL_CH3:
-		tmpccMr = mode | TIM_CCMR2_OC3PE;
-		CCMRx_Reg = (uint32_t*)&TIMx->CCMR2;
-		break;
-	case LL_TIM_CHANNEL_CH4:
-		tmpccMr = mode << (TIM_CCMR2_OC4M_Pos - 4) | TIM_CCMR2_OC4PE;
-		CCMRx_Reg = (uint32_t*)&TIMx->CCMR2;
-		break;
-	default:
-		CCMRx_Reg = nullptr;
-		break;
-	}
-	if(CCMRx_Reg != nullptr)
-	{
-		TIMx->CCER |= tmpccEr;
-		*CCMRx_Reg |= tmpccMr;
-	}
-	else
-	{
-		ret = failed;
-	}
-
-	return ret;
-}
-
-void TIM::Delay(uint32_t nTime)
-{
-	__IO uint32_t mDelay = nTime;
-	LL_TIM_ClearFlag_UPDATE(TIMx);
-	LL_TIM_SetCounter(TIMx, 0);
-
-	while(mDelay)
-	{
-		if(LL_TIM_IsActiveFlag_UPDATE(TIMx) != 0)
-		{
-			LL_TIM_ClearFlag_UPDATE(TIMx);
-			mDelay--;
-		}
-	}
-}
-
-#endif
 

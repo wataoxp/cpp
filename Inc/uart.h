@@ -63,6 +63,7 @@ public:
 	UART(USART_TypeDef *UARTPort);
 	void Config(Serial::UART_InitTypedef *init,uint32_t SysClk);
 	void TransmitData(uint8_t *buf,uint8_t size);
+	uint16_t ReceiveData(void);
 };
 
 
